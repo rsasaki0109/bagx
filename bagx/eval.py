@@ -139,9 +139,9 @@ def evaluate_bag(
         elif "Imu" in info.type or "imu" in info.type.lower():
             imu_topics.append(name)
 
-    # Collect messages
+    # Collect messages per topic
     gnss_messages: list[Message] = []
-    imu_messages: list[Message] = []
+    imu_messages_by_topic: dict[str, list[Message]] = {t: [] for t in imu_topics}
     topic_timestamps: dict[str, list[int]] = {t: [] for t in all_topics}
 
     # Read all messages if we need sync analysis
@@ -150,8 +150,8 @@ def evaluate_bag(
             topic_timestamps[msg.topic].append(msg.timestamp_ns)
         if msg.topic in gnss_topics:
             gnss_messages.append(msg)
-        elif msg.topic in imu_topics:
-            imu_messages.append(msg)
+        elif msg.topic in imu_messages_by_topic:
+            imu_messages_by_topic[msg.topic].append(msg)
 
     # Evaluate GNSS
     if gnss_messages:
@@ -159,10 +159,22 @@ def evaluate_bag(
     else:
         logger.info("No GNSS topics found in %s", bag_path)
 
-    # Evaluate IMU
-    if imu_messages:
-        report.imu = _evaluate_imu(imu_messages, config)
-    else:
+    # Evaluate IMU — per-topic, take best score
+    if imu_messages_by_topic:
+        best_imu: ImuMetrics | None = None
+        for topic_name, msgs in imu_messages_by_topic.items():
+            if not msgs:
+                continue
+            imu_result = _evaluate_imu(msgs, config)
+            logger.debug(
+                "IMU topic %s: score=%.1f, accel_noise=(%.4f,%.4f,%.4f)",
+                topic_name, imu_result.score,
+                imu_result.accel_noise_x, imu_result.accel_noise_y, imu_result.accel_noise_z,
+            )
+            if best_imu is None or imu_result.score > best_imu.score:
+                best_imu = imu_result
+        report.imu = best_imu
+    if report.imu is None:
         logger.info("No IMU topics found in %s", bag_path)
 
     # Evaluate sync
@@ -272,30 +284,34 @@ def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
             gyro_y.append(av.get("y", 0.0))
             gyro_z.append(av.get("z", 0.0))
 
-    if accel_x:
-        metrics.accel_noise_x = float(np.std(accel_x))
-        metrics.accel_noise_y = float(np.std(accel_y))
-        metrics.accel_noise_z = float(np.std(accel_z))
+    # Noise estimation via first-order differencing.
+    # Using diff removes low-frequency motion components (vehicle dynamics),
+    # isolating high-frequency sensor noise. Divide by sqrt(2) because
+    # diff doubles the variance of white noise: Var(x[n]-x[n-1]) = 2*Var(noise).
+    if len(accel_x) > 2:
+        metrics.accel_noise_x = float(np.std(np.diff(accel_x)) / math.sqrt(2))
+        metrics.accel_noise_y = float(np.std(np.diff(accel_y)) / math.sqrt(2))
+        metrics.accel_noise_z = float(np.std(np.diff(accel_z)) / math.sqrt(2))
 
-    if gyro_x:
-        metrics.gyro_noise_x = float(np.std(gyro_x))
-        metrics.gyro_noise_y = float(np.std(gyro_y))
-        metrics.gyro_noise_z = float(np.std(gyro_z))
+    if len(gyro_x) > 2:
+        metrics.gyro_noise_x = float(np.std(np.diff(gyro_x)) / math.sqrt(2))
+        metrics.gyro_noise_y = float(np.std(np.diff(gyro_y)) / math.sqrt(2))
+        metrics.gyro_noise_z = float(np.std(np.diff(gyro_z)) / math.sqrt(2))
 
-    # Bias stability via Allan variance approximation (windowed std)
+    # Bias stability via Allan variance approximation (windowed mean drift)
     if len(accel_x) > 100:
         window = len(accel_x) // 10
-        windowed = [
-            np.std(accel_x[i : i + window]) for i in range(0, len(accel_x) - window, window)
+        windowed_means = [
+            np.mean(accel_x[i : i + window]) for i in range(0, len(accel_x) - window, window)
         ]
-        metrics.accel_bias_stability = float(np.min(windowed)) if windowed else float("nan")
+        metrics.accel_bias_stability = float(np.std(windowed_means)) if len(windowed_means) > 1 else float("nan")
 
     if len(gyro_x) > 100:
         window = len(gyro_x) // 10
-        windowed = [
-            np.std(gyro_x[i : i + window]) for i in range(0, len(gyro_x) - window, window)
+        windowed_means = [
+            np.mean(gyro_x[i : i + window]) for i in range(0, len(gyro_x) - window, window)
         ]
-        metrics.gyro_bias_stability = float(np.min(windowed)) if windowed else float("nan")
+        metrics.gyro_bias_stability = float(np.std(windowed_means)) if len(windowed_means) > 1 else float("nan")
 
     # Frequency
     if len(timestamps) >= 2:
