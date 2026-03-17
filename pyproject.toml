@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -44,6 +44,11 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rsasaki0109/bagx"
+Repository = "https://github.com/rsasaki0109/bagx"
+Issues = "https://github.com/rsasaki0109/bagx/issues"
 
 [project.scripts]
 bagx = "bagx.cli:app"
