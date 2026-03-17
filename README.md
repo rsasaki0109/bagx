@@ -5,6 +5,62 @@ Post-processing analysis engine for ROS2 rosbag data.
 > **bagx is not a replacement for ros2 bag.**
 > ros2 bag handles recording & playback (I/O). bagx handles evaluation, understanding & comparison (Analysis).
 
+## What can you do with bagx?
+
+**Before a test drive** — check sensor readiness:
+```bash
+bagx eval pre_drive.db3
+# → GNSS fix rate 98%, HDOP 1.2, IMU 200Hz, Score: 87/100 ✓
+```
+
+**After a test drive** — compare two runs:
+```bash
+bagx compare run_A.db3 run_B.db3
+# → GNSS Fix Rate: A=95% B=72% (degraded)
+# → IMU Noise: A=0.04 B=0.03 (improved)
+# → Winner: A
+```
+
+**Debugging sensor issues** — find anomalies:
+```bash
+bagx anomaly recording.db3
+# → [12.3s] /gnss: position_jump (47.2m, severity: high)
+# → [45.1s] /imu: accel_spike (23.4 m/s², severity: high)
+# → [78.9s] /lidar: rate_gap (850ms, severity: medium)
+```
+
+**Checking time sync** — are sensors synchronized?
+```bash
+bagx sync recording.db3 /camera /lidar
+# → Mean: 3.2ms | Max: 12.1ms | P95: 8.4ms | Outliers: 0.2%
+```
+
+**Extracting dangerous scenes** — for safety review:
+```bash
+bagx scenario recording.db3
+# → [10.5s–14.2s] gnss_lost (3.7s, severity: high)
+# → [32.1s–32.8s] high_dynamics (brake, 18.3 m/s²)
+```
+
+**Preparing data for ML** — export to Parquet:
+```bash
+bagx export recording.db3 --ai --format parquet
+# → gnss.parquet (142 KB), imu.parquet (891 KB), lidar.parquet (2.3 MB)
+```
+
+**Asking questions in plain English**:
+```bash
+bagx ask recording.db3 "Is this bag suitable for SLAM evaluation?"
+# → The bag contains LiDAR at 10Hz and IMU at 200Hz with good sync (3ms).
+#   GNSS fix rate is 95%. Suitable for outdoor SLAM evaluation.
+```
+
+**Batch evaluation** — score an entire dataset:
+```bash
+bagx batch eval ./recordings/*.db3 --csv summary.csv
+# → 12 bags evaluated, scores: 34–91, mean: 72.4
+```
+
 ## Install
 
 ```bash
