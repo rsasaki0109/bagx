@@ -67,6 +67,12 @@ class ImuMetrics:
     accel_bias_stability: float = float("nan")
     gyro_bias_stability: float = float("nan")
     frequency_hz: float = float("nan")
+    is_static: bool = False
+    allan_accel_vrw: float = float("nan")  # m/s/sqrt(s), from Allan @ tau=1s
+    allan_gyro_arw: float = float("nan")   # rad/sqrt(s), from Allan @ tau=1s
+    allan_accel_bias_instab: float = float("nan")  # m/s², Allan dev minimum
+    allan_gyro_bias_instab: float = float("nan")   # rad/s, Allan dev minimum
+    noise_note: str = ""
     score: float = 0.0
 
 
@@ -298,28 +304,64 @@ def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
         metrics.gyro_noise_y = float(np.std(np.diff(gyro_y)) / math.sqrt(2))
         metrics.gyro_noise_z = float(np.std(np.diff(gyro_z)) / math.sqrt(2))
 
-    # Bias stability via Allan variance approximation (windowed mean drift)
-    if len(accel_x) > 100:
-        window = len(accel_x) // 10
-        windowed_means = [
-            np.mean(accel_x[i : i + window]) for i in range(0, len(accel_x) - window, window)
-        ]
-        metrics.accel_bias_stability = float(np.std(windowed_means)) if len(windowed_means) > 1 else float("nan")
-
-    if len(gyro_x) > 100:
-        window = len(gyro_x) // 10
-        windowed_means = [
-            np.mean(gyro_x[i : i + window]) for i in range(0, len(gyro_x) - window, window)
-        ]
-        metrics.gyro_bias_stability = float(np.std(windowed_means)) if len(windowed_means) > 1 else float("nan")
-
     # Frequency
+    dt = float("nan")
     if len(timestamps) >= 2:
         ts = np.array(timestamps, dtype=np.float64)
         diffs = np.diff(ts) / 1e9  # to seconds
         diffs = diffs[diffs > 0]
         if len(diffs) > 0:
-            metrics.frequency_hz = float(1.0 / np.median(diffs))
+            dt = float(np.median(diffs))
+            metrics.frequency_hz = float(1.0 / dt)
+
+    # Detect if data is static: accel magnitude should be ~9.81 with low variance
+    if len(accel_x) > 100:
+        accel_mag = np.sqrt(np.array(accel_x)**2 + np.array(accel_y)**2 + np.array(accel_z)**2)
+        accel_mag_std = float(np.std(accel_mag))
+        accel_mag_mean = float(np.mean(accel_mag))
+        # Static if: mean magnitude ~9.81 (±2) and low std (<0.5 m/s²)
+        metrics.is_static = (abs(accel_mag_mean - 9.81) < 2.0 and accel_mag_std < 0.5)
+
+    if metrics.is_static and not math.isnan(dt) and len(accel_x) > 500:
+        # Allan Variance on static data — gives reliable VRW/ARW and bias instability
+        allan_a = _compute_allan_dev(np.array(accel_x), dt)
+        allan_g = _compute_allan_dev(np.array(gyro_x), dt)
+
+        if allan_a is not None:
+            metrics.allan_accel_vrw = allan_a["adev_1s"]
+            metrics.allan_accel_bias_instab = allan_a["bias_instab"]
+            metrics.accel_bias_stability = allan_a["bias_instab"]
+        if allan_g is not None:
+            metrics.allan_gyro_arw = allan_g["adev_1s"]
+            metrics.allan_gyro_bias_instab = allan_g["bias_instab"]
+            metrics.gyro_bias_stability = allan_g["bias_instab"]
+
+        metrics.noise_note = "Static data detected — Allan Variance computed for VRW/ARW and bias instability."
+    else:
+        # Dynamic data: use windowed mean drift as bias stability approximation
+        if len(accel_x) > 100:
+            window = len(accel_x) // 10
+            windowed_means = [
+                np.mean(accel_x[i : i + window]) for i in range(0, len(accel_x) - window, window)
+            ]
+            metrics.accel_bias_stability = float(np.std(windowed_means)) if len(windowed_means) > 1 else float("nan")
+
+        if len(gyro_x) > 100:
+            window = len(gyro_x) // 10
+            windowed_means = [
+                np.mean(gyro_x[i : i + window]) for i in range(0, len(gyro_x) - window, window)
+            ]
+            metrics.gyro_bias_stability = float(np.std(windowed_means)) if len(windowed_means) > 1 else float("nan")
+
+        duration_sec = len(accel_x) * dt if not math.isnan(dt) else 0
+        if duration_sec < 60:
+            metrics.noise_note = "Short recording — for bias instability, record >60s of static data."
+        else:
+            metrics.noise_note = "Dynamic data — noise via diff (=Allan τ=dt). For bias instability, record static data."
+
+    logger.debug(
+        "IMU static=%s, note=%s", metrics.is_static, metrics.noise_note
+    )
 
     # Score: low noise is good
     accel_noise = (
@@ -356,6 +398,57 @@ def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
     metrics.score = accel_score * 0.5 + gyro_score * 0.5
 
     return metrics
+
+
+def _compute_allan_dev(data: np.ndarray, dt: float) -> dict | None:
+    """Compute Allan Deviation at multiple tau values.
+
+    Returns dict with adev_1s (at tau~1s) and bias_instab (minimum adev).
+    Returns None if data is too short.
+    """
+    N = len(data)
+    if N < 100:
+        return None
+
+    # Logarithmically-spaced cluster sizes
+    cluster_sizes = np.unique(np.logspace(0, np.log10(N // 2), 50).astype(int))
+    cluster_sizes = cluster_sizes[(cluster_sizes >= 1) & (cluster_sizes * 2 <= N)]
+
+    if len(cluster_sizes) == 0:
+        return None
+
+    theta = np.cumsum(data) * dt  # integrated signal
+    taus = []
+    adevs = []
+
+    for m in cluster_sizes:
+        tau = m * dt
+        # Non-overlapping Allan variance for speed
+        n_chunks = (N - 1) // m
+        if n_chunks < 2:
+            continue
+        chunks = np.array([
+            theta[(i + 1) * m] - theta[i * m]
+            for i in range(n_chunks)
+        ])
+        avar = float(np.mean(np.diff(chunks) ** 2) / (2 * tau ** 2))
+        taus.append(tau)
+        adevs.append(math.sqrt(avar))
+
+    if not adevs:
+        return None
+
+    taus = np.array(taus)
+    adevs = np.array(adevs)
+
+    # adev at tau ~= 1s
+    idx_1s = int(np.argmin(np.abs(taus - 1.0)))
+    adev_1s = float(adevs[idx_1s])
+
+    # Bias instability = minimum adev
+    bias_instab = float(np.min(adevs))
+
+    return {"adev_1s": adev_1s, "bias_instab": bias_instab}
 
 
 def _evaluate_sync(
@@ -465,11 +558,19 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
             "Accel Bias Stability",
             f"{m.accel_bias_stability:.4f}" if not math.isnan(m.accel_bias_stability) else "N/A",
         )
+        if not math.isnan(m.allan_accel_vrw):
+            table.add_row("Allan VRW (accel)", f"{m.allan_accel_vrw:.6f} m/s/√s")
+            table.add_row("Allan ARW (gyro)", f"{m.allan_gyro_arw:.6f} rad/√s")
+            table.add_row("Allan Bias (accel)", f"{m.allan_accel_bias_instab:.6f} m/s²")
+            table.add_row("Allan Bias (gyro)", f"{m.allan_gyro_bias_instab:.6f} rad/s")
+        table.add_row("Data Type", "[green]Static[/]" if m.is_static else "[yellow]Dynamic[/]")
         table.add_row(
             "Score",
             f"[{'green' if m.score >= 70 else 'yellow' if m.score >= 40 else 'red'}]{m.score:.1f}/100[/]",
         )
         console.print(table)
+        if m.noise_note:
+            console.print(f"  [dim]{m.noise_note}[/dim]")
 
     if report.sync:
         s = report.sync
