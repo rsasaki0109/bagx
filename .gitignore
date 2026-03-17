@@ -11,6 +11,9 @@ build/
 
 .pytest_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 *.db3
 test_data/
