@@ -3,9 +3,7 @@
 import json
 from pathlib import Path
 
-import pandas as pd
 import pyarrow.parquet as pq
-import pytest
 
 from bagx.export import export_bag
 

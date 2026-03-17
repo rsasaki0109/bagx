@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
 
 from bagx.compare import compare_bags
 

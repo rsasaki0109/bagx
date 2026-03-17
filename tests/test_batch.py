@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import csv
 import json
-import struct
 from pathlib import Path
 
-import pytest
 
 from bagx.batch import batch_anomaly, batch_eval, resolve_bag_paths
 from tests.conftest import (
     _create_db3,
-    build_imu_cdr,
     build_navsatfix_cdr,
 )
 
@@ -48,8 +45,8 @@ class TestResolveBagPaths:
     def test_resolve_directory(self, tmp_path: Path):
         subdir = tmp_path / "bags"
         subdir.mkdir()
-        bag1 = _make_gnss_bag(subdir / "a.db3")
-        bag2 = _make_gnss_bag(subdir / "b.db3")
+        _make_gnss_bag(subdir / "a.db3")
+        _make_gnss_bag(subdir / "b.db3")
         # Also create a non-bag file that should be ignored
         (subdir / "notes.txt").write_text("not a bag")
 
@@ -170,7 +167,7 @@ class TestBatchAnomaly:
         bag = _make_gnss_bag(tmp_path / "test.db3")
         json_path = str(tmp_path / "anomalies.json")
 
-        result = batch_anomaly([str(bag)], output_json=json_path)
+        batch_anomaly([str(bag)], output_json=json_path)
 
         assert Path(json_path).exists()
         with open(json_path) as f:

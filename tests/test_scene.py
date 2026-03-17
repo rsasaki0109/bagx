@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bagx.scene import SceneReport, SceneState, export_scene_csv, extract_scene
+from bagx.scene import export_scene_csv, extract_scene
 
 
 class TestAutoDetection:

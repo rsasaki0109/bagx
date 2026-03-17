@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import struct
 from pathlib import Path
 
-import pytest
 
 from bagx.anomaly import detect_anomalies, AnomalyReport
 
