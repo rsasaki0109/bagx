@@ -285,9 +285,9 @@ def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
             gyro_z.append(av.get("z", 0.0))
 
     # Noise estimation via first-order differencing.
-    # Using diff removes low-frequency motion components (vehicle dynamics),
-    # isolating high-frequency sensor noise. Divide by sqrt(2) because
-    # diff doubles the variance of white noise: Var(x[n]-x[n-1]) = 2*Var(noise).
+    # Mathematically equivalent to Allan Deviation at tau=dt (one sample interval).
+    # Removes low-frequency motion components (vehicle dynamics), isolating sensor noise.
+    # Divide by sqrt(2) because diff doubles white noise variance: Var(x[n]-x[n-1]) = 2*sigma^2.
     if len(accel_x) > 2:
         metrics.accel_noise_x = float(np.std(np.diff(accel_x)) / math.sqrt(2))
         metrics.accel_noise_y = float(np.std(np.diff(accel_y)) / math.sqrt(2))

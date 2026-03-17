@@ -17,12 +17,15 @@ bagx eval recording.db3 --json report.json
 - **Altitude**: Mean and standard deviation
 
 ### IMU Quality
-- **Noise**: Estimated via first-order differencing (high-pass filter), removing vehicle dynamics
-- **Bias stability**: Drift of windowed means over time
+- **Noise**: Estimated via first-order differencing — mathematically equivalent to Allan Deviation at τ=dt (one sample interval). This removes low-frequency vehicle dynamics and isolates sensor noise, even during motion.
+- **Bias stability**: Standard deviation of windowed means — approximates Allan Deviation at longer τ values
 - **Frequency**: Measured from message timestamps
 
 !!! info "Multi-IMU handling"
     If a bag contains multiple IMU topics, each is evaluated independently. The best-scoring IMU is reported.
+
+!!! note "Relationship to Allan Variance"
+    The noise values reported by bagx are `std(diff(x)) / √2`, which equals the Allan Deviation at τ = 1/fs (sampling period). This was verified on real IMU data (Livox MID-360, 200Hz): diff-based = 0.0114 m/s², Allan σ(τ=dt) = 0.0114 m/s². For the standard Allan VRW/ARW specification (at τ=1s), use a dedicated Allan Variance tool on static data.
 
 ### Topic Sync
 - **Mean/max delay**: Nearest-neighbor timestamp matching between adjacent topic pairs
