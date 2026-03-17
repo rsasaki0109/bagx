@@ -1,5 +1,10 @@
 # bagx
 
+[![PyPI](https://img.shields.io/pypi/v/bagx)](https://pypi.org/project/bagx/)
+[![CI](https://github.com/rsasaki0109/bagx/actions/workflows/ci.yml/badge.svg)](https://github.com/rsasaki0109/bagx/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rsasaki0109.github.io/bagx/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Post-processing analysis engine for ROS2 rosbag data.
 
 > **bagx is not a replacement for ros2 bag.**
