@@ -61,6 +61,91 @@ bagx batch eval ./recordings/*.db3 --csv summary.csv
 # → 12 bags evaluated, scores: 34–91, mean: 72.4
 ```
 
+## Real-world evaluation results
+
+Evaluated on public LiDAR SLAM datasets to demonstrate what bagx can tell you about your data.
+
+### Batch scoring across datasets
+
+```
+$ bagx batch eval ./slam_datasets/
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━━┓
+┃ Bag                      ┃ Duration (s) ┃  Messages ┃ GNSS ┃   IMU ┃  Sync ┃ Overall ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━━┩
+│ Livox MID-360            │        277.2 │    58,217 │  N/A │  97.3 │  70.0 │    83.7 │
+│ Ouster OS0-32            │         47.3 │     5,208 │  N/A │  79.6 │  73.6 │    76.6 │
+│ Newer College (handheld) │        193.0 │   225,758 │  N/A │  84.5 │ 100.0 │    92.3 │
+│ NTU VIRAL (drone)        │        583.6 │ 1,248,476 │ 80.0 │  59.5 │ 100.0 │    79.8 │
+└──────────────────────────┴──────────────┴───────────┴──────┴───────┴───────┴─────────┘
+```
+
+**What this tells you:**
+
+- **Newer College** scores highest (92.3) — excellent sensor sync across 4 cameras + 2 IMUs + LiDAR, low IMU noise. Ideal for LiDAR SLAM.
+- **Livox MID-360** has the best IMU (97.3) but 25ms sync delay between IMU and LiDAR — tightly-coupled SLAM should compensate for this latency.
+- **NTU VIRAL** has perfect GNSS (100% fix) and sync, but IMU scores lower (59.5) due to noisier drone-mounted sensors.
+- **Ouster OS0-32** internal IMU is usable (79.6) but not great — consider adding an external IMU for better SLAM performance.
+
+### Detailed evaluation (NTU VIRAL drone dataset)
+
+```
+$ bagx eval ntu_viral_tnp_01.db3
+
+Duration: 583.6s | Messages: 1,248,476 | Topics: 19
+
+             GNSS Quality
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Metric                ┃      Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ Messages              │      28975 │
+│ Fix Rate              │     100.0% │
+│ Altitude (mean±std)   │ 76.5±2.4   │
+│ Score                 │   80.0/100 │
+└───────────────────────┴────────────┘
+             IMU Quality
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric               ┃                        Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Messages             │                       225142 │
+│ Accel Noise (xyz)    │       0.3049, 0.3180, 0.6054 │
+│ Gyro Noise (xyz)     │ 0.009956, 0.014712, 0.004014 │
+│ Accel Bias Stability │                       0.0321 │
+│ Score                │                     59.5/100 │
+└──────────────────────┴──────────────────────────────┘
+             Topic Sync Quality
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Topic Pair                                 ┃ Mean (ms) ┃ Max (ms) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━┩
+│ /dji_sdk/imu ↔ /imu/imu                   │       1.3 │     21.9 │
+│ /dji_sdk/gps_position ↔ /dji_sdk/imu      │       1.6 │     31.5 │
+│ Score                                      │ 100.0/100 │          │
+└────────────────────────────────────────────┴───────────┴──────────┘
+
+Overall Score: 79.8/100
+```
+
+### Cross-IMU sync analysis
+
+```
+$ bagx sync ntu_viral.db3 /dji_sdk/imu /os1_cloud_node1/imu
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┓
+┃ Topic Pair                           ┃  Count ┃ Mean ms ┃  Max ms ┃  P95 ms ┃ Outlier ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━┩
+│ /dji_sdk/imu ↔ /os1_cloud_node1/imu │ 231793 │    2.50 │   10.14 │    4.75 │    0.0% │
+└──────────────────────────────────────┴────────┴─────────┴─────────┴─────────┴─────────┘
+```
+
+→ DJI onboard IMU and Ouster LiDAR IMU are synchronized within 2.5ms on average, with zero outliers. Suitable for multi-IMU fusion.
+
+### Datasets used
+
+- [NTU VIRAL](https://ntu-aris.github.io/ntu_viral_dataset/) — Drone with GNSS, 4 IMUs, 2 LiDARs, cameras, UWB
+- [Newer College Dataset](https://ori-drs.github.io/newer-college-dataset/) — Handheld with Ouster LiDAR, Alphasense cameras + IMU
+- [glim](https://koide3.github.io/glim/) — Indoor/outdoor with Livox MID-360
+- [Koide LiDAR-Camera Calibration](https://koide3.github.io/direct_visual_lidar_calibration/) — Static calibration bags with Livox
+
 ## Install
 
 ```bash
