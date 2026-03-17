@@ -102,9 +102,11 @@ def detect_anomalies(
     for topic, messages in imu_messages.items():
         anomalies.extend(_detect_imu_anomalies(topic, messages))
 
-    # General rate anomalies
+    # General rate anomalies (skip GNSS/IMU topics — already covered above)
+    specialized_topics = set(gnss_topics) | set(imu_topics)
     for topic, timestamps in topic_timestamps.items():
-        anomalies.extend(_detect_rate_anomalies(topic, timestamps))
+        if topic not in specialized_topics:
+            anomalies.extend(_detect_rate_anomalies(topic, timestamps))
 
     # Sort by timestamp
     anomalies.sort(key=lambda a: a.timestamp_ns)
@@ -270,10 +272,13 @@ def _detect_imu_anomalies(
         ts_arr = np.array(sorted(timestamps), dtype=np.int64)
         intervals = np.diff(ts_arr)
         median_interval = float(np.median(intervals))
-        if median_interval > 0:
+        # Minimum 100µs to avoid false positives from bursty recording timestamps
+        # Minimum 50ms absolute gap to avoid noise on bursty timestamps
+        min_gap_ns = 50_000_000
+        if median_interval > 100_000:  # 100µs in ns
             gap_threshold = 3 * median_interval
             for i, interval in enumerate(intervals):
-                if interval > gap_threshold:
+                if interval > gap_threshold and interval > min_gap_ns:
                     anomalies.append(AnomalyEvent(
                         timestamp_ns=int(ts_arr[i + 1]),
                         topic=topic,
@@ -298,12 +303,15 @@ def _detect_rate_anomalies(
     intervals = np.diff(ts_arr)
     median_interval = float(np.median(intervals))
 
-    if median_interval <= 0:
+    # Minimum 100µs to avoid false positives from bursty recording timestamps
+    if median_interval <= 100_000:  # 100µs in ns
         return anomalies
 
     gap_threshold = 3 * median_interval
+    # Minimum absolute gap of 50ms to avoid noise on high-rate topics
+    min_gap_ns = 50_000_000  # 50ms
     for i, interval in enumerate(intervals):
-        if interval > gap_threshold:
+        if interval > gap_threshold and interval > min_gap_ns:
             anomalies.append(AnomalyEvent(
                 timestamp_ns=int(ts_arr[i + 1]),
                 topic=topic,
