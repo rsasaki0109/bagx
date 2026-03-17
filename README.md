@@ -1,84 +1,91 @@
 # bagx
 
-rosbagデータの評価・比較・同期解析・AI向け変換を行うポスト処理CLIツール。
+Post-processing analysis engine for ROS2 rosbag data.
 
-> **bagxはros2 bagの代替ではない。**
-> ros2 bagがデータの記録・再生（I/O）を担うのに対し、bagxはデータの評価・理解・比較（Analysis）を行う。
+> **bagx is not a replacement for ros2 bag.**
+> ros2 bag handles recording & playback (I/O). bagx handles evaluation, understanding & comparison (Analysis).
 
-## インストール
+## Install
 
 ```bash
 pip install -e .
 ```
 
-ROS2環境がある場合は `rosbag2_py` を利用した完全なメッセージデシリアライズが可能。
-ROS2がなくても `.db3` ファイルの基本的な解析は動作する（SQLiteフォールバック）。
+With ROS2 installed, full message deserialization via `rosbag2_py` is available.
+Without ROS2, basic analysis of `.db3` files still works (SQLite fallback with built-in CDR parsers).
 
-## コマンド
+Optional extras:
 
-### `bagx info` — Bag情報表示
+```bash
+pip install -e ".[mcap]"  # .mcap file support
+pip install -e ".[llm]"   # LLM-powered ask command (Anthropic / OpenAI)
+```
+
+## Commands
+
+### `bagx info` — Bag summary
 
 ```bash
 bagx info recording.db3
 ```
 
-### `bagx eval` — 品質評価
+### `bagx eval` — Quality evaluation
 
-単一bagの品質を自動評価し、スコアを出力。
+Evaluate a single bag and produce a composite quality score.
 
 ```bash
 bagx eval recording.db3
 bagx eval recording.db3 --json report.json
 ```
 
-評価項目:
-- **GNSS**: Fix率、HDOP統計
-- **IMU**: 加速度/ジャイロノイズ、バイアス安定性、周波数
-- **SYNC**: topic間の平均/最大遅延
-- **総合スコア**: 0-100
+Metrics:
+- **GNSS**: Fix rate, HDOP statistics
+- **IMU**: Accel/gyro noise, bias stability, frequency
+- **SYNC**: Inter-topic mean/max delay
+- **Overall score**: 0–100
 
-### `bagx compare` — 2つのbagを比較
+### `bagx compare` — Compare two bags
 
 ```bash
 bagx compare A.db3 B.db3
 bagx compare A.db3 B.db3 --json diff.json
 ```
 
-出力:
-- 各指標のA/B値と差分
-- improved / degraded / unchanged 判定
-- 総合的にどちらが良いか
+Output:
+- Per-metric A/B values and diff
+- improved / degraded / unchanged verdict
+- Overall winner
 
-### `bagx sync` — topic間の時間同期解析
+### `bagx sync` — Inter-topic sync analysis
 
 ```bash
 bagx sync recording.db3 /gnss /lidar
 bagx sync recording.db3 /imu /camera --json sync.json
 ```
 
-出力:
-- 平均遅延、最大遅延、中央値、P95
-- 標準偏差、外れ値率
+Output:
+- Mean, max, median, P95 delay
+- Standard deviation, outlier rate
 
-### `bagx export` — AI/解析用フォーマットに変換
+### `bagx export` — Export to AI/analytics formats
 
 ```bash
-# Parquetにエクスポート（デフォルト）
+# Parquet (default)
 bagx export recording.db3
 
-# AI向けモード（相対タイムスタンプ、正規化）
+# AI-friendly mode (relative timestamps, normalized)
 bagx export recording.db3 --ai --format parquet
 
-# JSON出力、特定topicのみ
+# JSON, specific topics only
 bagx export recording.db3 --format json --topics /gnss,/imu
 
-# フラット化なし
+# No flattening
 bagx export recording.db3 --no-flatten
 ```
 
-### `bagx anomaly` — 異常検知
+### `bagx anomaly` — Anomaly detection
 
-センサーデータの異常・外れ値を自動検出。
+Automatically detect anomalies and outliers in sensor data.
 
 ```bash
 bagx anomaly recording.db3
@@ -86,65 +93,103 @@ bagx anomaly recording.db3 --topic /gnss
 bagx anomaly recording.db3 --json anomalies.json
 ```
 
-検出対象:
-- **GNSS**: 位置ジャンプ、Fix状態の突然の喪失、HDOPスパイク
-- **IMU**: 加速度/ジャイロのスパイク（N*σ超過）、周波数低下
-- **全般**: メッセージレート異常（3x中央値超のギャップ）
+Detects:
+- **GNSS**: Position jumps, sudden fix loss, HDOP spikes
+- **IMU**: Accel/gyro spikes (N*σ), frequency drops
+- **General**: Message rate gaps (>3x median interval)
 
-### `bagx scenario` — 危険シーン抽出
+### `bagx scenario` — Dangerous scene extraction
 
-「興味深い」または「危険な」シナリオの時間区間を自動抽出。
+Extract time segments where notable or dangerous scenarios occur.
 
 ```bash
 bagx scenario recording.db3
 bagx scenario recording.db3 --json scenarios.json
 ```
 
-検出ルール:
-- **GNSS消失**: 連続no-fixが閾値期間を超過
-- **センサー脱落**: topicが閾値期間以上停止
-- **高ダイナミクス**: IMU加速度の大きさが閾値を超過（急ブレーキ、急旋回）
-- **同期劣化**: topic間遅延が持続的に閾値超過
+Rules:
+- **GNSS lost**: Consecutive no-fix exceeding threshold duration
+- **Sensor dropout**: Topic stops publishing beyond threshold
+- **High dynamics**: IMU acceleration magnitude exceeds threshold (hard braking, sharp turns)
+- **Sync degraded**: Sustained inter-topic delay above threshold
 
-## 設計方針
+### `bagx ask` — Natural language queries
 
-- **CLI-first**: コマンドを主役とする設計
-- **再現性・バッチ処理**: スクリプトやCI/CDに組み込み可能
-- **出力は数値・JSON・Parquet**: GUIではなくデータで語る
-- **モジュール構造**: eval / compare / sync / export が独立
+Ask questions about a bag file, answered by an LLM.
 
-## プロジェクト構成
+```bash
+bagx ask recording.db3 "What sensors are in this bag?"
+bagx ask recording.db3 "Is the GNSS quality good?" --provider openai
+```
+
+Requires `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` environment variable.
+
+### `bagx scene` — 3D state extraction
+
+Extract position, orientation, and velocity time series.
+
+```bash
+bagx scene recording.db3
+bagx scene recording.db3 --csv scene.csv
+bagx scene recording.db3 --topics /odom,/imu
+```
+
+Auto-detects PoseStamped, Odometry, Imu, NavSatFix, and TFMessage topics.
+
+### `bagx batch` — Batch processing
+
+Evaluate or analyze multiple bags at once.
+
+```bash
+bagx batch eval *.db3 --csv summary.csv
+bagx batch eval ./recordings/
+bagx batch anomaly *.db3 --json anomalies.json
+```
+
+## Design
+
+- **CLI-first**: Commands are the primary interface
+- **Reproducible & scriptable**: Designed for batch processing and CI/CD
+- **Data output**: Numbers, JSON, Parquet, CSV — no GUI
+- **Modular**: Each command is an independent module
+- **ROS2-optional**: Works without ROS2 via SQLite + CDR fallback
+
+## Project structure
 
 ```
 bagx/
-  __init__.py
-  cli.py        # typerベースのCLIエントリポイント
-  reader.py     # rosbag読み込み抽象化（rosbag2_py / SQLiteフォールバック）
-  eval.py       # 品質評価エンジン
-  compare.py    # 2bag比較
-  sync.py       # topic間同期解析
-  export.py     # Parquet / JSON エクスポート
-  anomaly.py    # 異常検知
-  scenario.py   # 危険シーン抽出
-  schema.py     # スキーマ推定・正規化
+  cli.py        # typer-based CLI entry point
+  reader.py     # Bag reading (rosbag2_py / mcap / SQLite fallback)
+  eval.py       # Quality evaluation engine
+  compare.py    # Two-bag comparison
+  sync.py       # Inter-topic sync analysis
+  export.py     # Parquet / JSON export
+  anomaly.py    # Anomaly detection
+  scenario.py   # Dangerous scene extraction
+  ask.py        # LLM-powered natural language queries
+  scene.py      # 3D state extraction
+  batch.py      # Batch processing
+  schema.py     # Schema inference & normalization
 ```
 
-## 技術スタック
+## Tech stack
 
-- **typer** + **rich**: CLI & 表示
-- **rosbag2_py**: ROS2 bag読み込み（オプション）
-- **numpy / pandas**: 数値解析
-- **pyarrow**: Parquet出力
+- **typer** + **rich**: CLI & display
+- **rosbag2_py**: ROS2 bag reading (optional)
+- **mcap** + **mcap-ros2-support**: MCAP format support (optional)
+- **numpy / pandas**: Numerical analysis
+- **pyarrow**: Parquet output
+- **anthropic / openai**: LLM integration (optional)
 
 <!-- CLI_REFERENCE_START -->
 
 ## CLI Reference
 
 ```
-Usage: bagx [OPTIONS] COMMAND [ARGS]...                                        
-                                                                                
- Post-processing analysis engine for ROS2 rosbag data.                          
-                                                                                
+Usage: bagx [OPTIONS] COMMAND [ARGS]...
+
+ Post-processing analysis engine for ROS2 rosbag data.
+
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --install-completion          Install completion for the current shell.      │
 │ --show-completion             Show completion for the current shell, to copy │
@@ -169,13 +214,13 @@ Usage: bagx [OPTIONS] COMMAND [ARGS]...
 ### `bagx eval`
 
 ```
-Usage: bagx eval [OPTIONS] BAG                                                 
-                                                                                
- Evaluate quality of a single bag file.                                         
-                                                                                
- Analyzes GNSS fix rate/HDOP, IMU noise/bias, and inter-topic sync,             
- producing a composite quality score.                                           
-                                                                                
+Usage: bagx eval [OPTIONS] BAG
+
+ Evaluate quality of a single bag file.
+
+ Analyzes GNSS fix rate/HDOP, IMU noise/bias, and inter-topic sync,
+ producing a composite quality score.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag      TEXT  Path to the bag file (.db3 or directory) [required]      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -188,13 +233,13 @@ Usage: bagx eval [OPTIONS] BAG
 ### `bagx compare`
 
 ```
-Usage: bagx compare [OPTIONS] BAG_A BAG_B                                      
-                                                                                
- Compare quality metrics of two bag files.                                      
-                                                                                
- Evaluates both bags and reports per-metric differences,                        
- indicating which bag is better overall.                                        
-                                                                                
+Usage: bagx compare [OPTIONS] BAG_A BAG_B
+
+ Compare quality metrics of two bag files.
+
+ Evaluates both bags and reports per-metric differences,
+ indicating which bag is better overall.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag_a      TEXT  Path to the first bag file [required]                  │
 │ *    bag_b      TEXT  Path to the second bag file [required]                 │
@@ -208,12 +253,12 @@ Usage: bagx compare [OPTIONS] BAG_A BAG_B
 ### `bagx sync`
 
 ```
-Usage: bagx sync [OPTIONS] BAG TOPIC_A TOPIC_B                                 
-                                                                                
- Analyze time synchronization between two topics.                               
-                                                                                
- Reports mean/max/median delay, variance, P95, and outlier rate.                
-                                                                                
+Usage: bagx sync [OPTIONS] BAG TOPIC_A TOPIC_B
+
+ Analyze time synchronization between two topics.
+
+ Reports mean/max/median delay, variance, P95, and outlier rate.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag          TEXT  Path to the bag file [required]                      │
 │ *    topic_a      TEXT  First topic name [required]                          │
@@ -228,13 +273,13 @@ Usage: bagx sync [OPTIONS] BAG TOPIC_A TOPIC_B
 ### `bagx export`
 
 ```
-Usage: bagx export [OPTIONS] BAG                                               
-                                                                                
- Export bag data to AI/analytics-friendly formats.                              
-                                                                                
- Outputs one file per topic in JSON or Parquet format,                          
- with optional timestamp normalization and field flattening.                    
-                                                                                
+Usage: bagx export [OPTIONS] BAG
+
+ Export bag data to AI/analytics-friendly formats.
+
+ Outputs one file per topic in JSON or Parquet format,
+ with optional timestamp normalization and field flattening.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag      TEXT  Path to the bag file [required]                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -255,13 +300,13 @@ Usage: bagx export [OPTIONS] BAG
 ### `bagx anomaly`
 
 ```
-Usage: bagx anomaly [OPTIONS] BAG                                              
-                                                                                
- Detect anomalies and outliers in sensor data.                                  
-                                                                                
- Finds GNSS position jumps, IMU spikes, message rate gaps,                      
- and other anomalous events in the bag file.                                    
-                                                                                
+Usage: bagx anomaly [OPTIONS] BAG
+
+ Detect anomalies and outliers in sensor data.
+
+ Finds GNSS position jumps, IMU spikes, message rate gaps,
+ and other anomalous events in the bag file.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag      TEXT  Path to the bag file [required]                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -275,13 +320,13 @@ Usage: bagx anomaly [OPTIONS] BAG
 ### `bagx scenario`
 
 ```
-Usage: bagx scenario [OPTIONS] BAG                                             
-                                                                                
- Identify and extract dangerous or interesting scenarios.                       
-                                                                                
- Detects GNSS loss, sensor dropouts, high dynamics events,                      
- and sync degradation periods.                                                  
-                                                                                
+Usage: bagx scenario [OPTIONS] BAG
+
+ Identify and extract dangerous or interesting scenarios.
+
+ Detects GNSS loss, sensor dropouts, high dynamics events,
+ and sync degradation periods.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag      TEXT  Path to the bag file [required]                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -294,13 +339,13 @@ Usage: bagx scenario [OPTIONS] BAG
 ### `bagx ask`
 
 ```
-Usage: bagx ask [OPTIONS] BAG QUESTION                                         
-                                                                                
- Ask a natural language question about a bag file, answered by an LLM.          
-                                                                                
- Gathers bag context (summary, eval, message samples) and sends it              
- along with your question to an LLM for analysis.                               
-                                                                                
+Usage: bagx ask [OPTIONS] BAG QUESTION
+
+ Ask a natural language question about a bag file, answered by an LLM.
+
+ Gathers bag context (summary, eval, message samples) and sends it
+ along with your question to an LLM for analysis.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag           TEXT  Path to the bag file (.db3 or directory) [required] │
 │ *    question      TEXT  Natural language question about the bag [required]  │
@@ -315,13 +360,13 @@ Usage: bagx ask [OPTIONS] BAG QUESTION
 ### `bagx scene`
 
 ```
-Usage: bagx scene [OPTIONS] BAG                                                
-                                                                                
- Extract 3D state (position, orientation, velocity) time series.                
-                                                                                
- Auto-detects topics with scene-relevant message types (PoseStamped,            
- Odometry, Imu, NavSatFix, TFMessage) unless specific topics are given.         
-                                                                                
+Usage: bagx scene [OPTIONS] BAG
+
+ Extract 3D state (position, orientation, velocity) time series.
+
+ Auto-detects topics with scene-relevant message types (PoseStamped,
+ Odometry, Imu, NavSatFix, TFMessage) unless specific topics are given.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag      TEXT  Path to the bag file [required]                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -336,10 +381,10 @@ Usage: bagx scene [OPTIONS] BAG
 ### `bagx info`
 
 ```
-Usage: bagx info [OPTIONS] BAG                                                 
-                                                                                
- Show bag file summary information.                                             
-                                                                                
+Usage: bagx info [OPTIONS] BAG
+
+ Show bag file summary information.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bag      TEXT  Path to the bag file [required]                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -351,10 +396,10 @@ Usage: bagx info [OPTIONS] BAG
 ### `bagx batch`
 
 ```
-Usage: bagx batch [OPTIONS] COMMAND [ARGS]...                                  
-                                                                                
- Batch operations on multiple bags                                              
-                                                                                
+Usage: bagx batch [OPTIONS] COMMAND [ARGS]...
+
+ Batch operations on multiple bags
+
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
