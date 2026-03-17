@@ -6,6 +6,7 @@ Detects outliers and anomalies in GNSS, IMU, and general message rate data.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import asdict, dataclass, field
 from typing import TextIO
@@ -15,6 +16,8 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader, Message
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -105,6 +108,9 @@ def detect_anomalies(
 
     # Sort by timestamp
     anomalies.sort(key=lambda a: a.timestamp_ns)
+
+    if not anomalies:
+        logger.info("No anomalies detected in %s", bag_path)
 
     report = AnomalyReport(
         bag_path=str(bag_path),

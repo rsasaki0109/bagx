@@ -6,6 +6,7 @@ Supports both .db3 (SQLite) and .mcap formats.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import struct
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from pathlib import Path
 from typing import Iterator
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import rosbag2_py
@@ -139,9 +142,12 @@ class BagReader:
 
     def _summary_ros(self) -> BagSummary:
         reader = rosbag2_py.SequentialReader()
-        storage_options = rosbag2_py.StorageOptions(uri=str(self.path), storage_id="")
+        storage_options = rosbag2_py.StorageOptions(
+            uri=str(self.path), storage_id=""
+        )
         converter_options = rosbag2_py.ConverterOptions(
-            input_serialization_format="cdr", output_serialization_format="cdr"
+            input_serialization_format="cdr",
+            output_serialization_format="cdr",
         )
         reader.open(storage_options, converter_options)
 
@@ -160,16 +166,20 @@ class BagReader:
             path=self.path,
             duration_ns=metadata.duration.nanoseconds,
             start_time_ns=metadata.starting_time.nanoseconds,
-            end_time_ns=metadata.starting_time.nanoseconds + metadata.duration.nanoseconds,
+            end_time_ns=metadata.starting_time.nanoseconds
+            + metadata.duration.nanoseconds,
             message_count=metadata.message_count,
             topics=topics,
         )
 
     def _read_ros(self, topics: list[str] | None) -> Iterator[Message]:
         reader = rosbag2_py.SequentialReader()
-        storage_options = rosbag2_py.StorageOptions(uri=str(self.path), storage_id="")
+        storage_options = rosbag2_py.StorageOptions(
+            uri=str(self.path), storage_id=""
+        )
         converter_options = rosbag2_py.ConverterOptions(
-            input_serialization_format="cdr", output_serialization_format="cdr"
+            input_serialization_format="cdr",
+            output_serialization_format="cdr",
         )
         reader.open(storage_options, converter_options)
 
@@ -192,93 +202,139 @@ class BagReader:
                 # Fall back to basic CDR parser for known types
                 data = _parse_cdr_basic(raw_data, msg_type_str)
 
-            yield Message(topic=topic, timestamp_ns=timestamp_ns, data=data)
+            yield Message(
+                topic=topic, timestamp_ns=timestamp_ns, data=data
+            )
 
     # --- MCAP backend ---
 
-    def _get_mcap_path(self) -> Path:
+    def _get_mcap_paths(self) -> list[Path]:
+        """Return all .mcap files for this bag, sorted by name."""
         if self.path.suffix == ".mcap":
-            return self.path
-        mcap_files = list(self.path.glob("*.mcap"))
+            return [self.path]
+        mcap_files = sorted(self.path.glob("*.mcap"))
         if not mcap_files:
-            raise FileNotFoundError(f"No .mcap file found in {self.path}")
-        return mcap_files[0]
+            raise FileNotFoundError(
+                f"No .mcap file found in {self.path}"
+            )
+        return mcap_files
 
     def _summary_mcap(self) -> BagSummary:
-        mcap_path = self._get_mcap_path()
-        with open(mcap_path, "rb") as f:
-            reader = mcap_make_reader(f)
-            summary = reader.get_summary()
+        mcap_paths = self._get_mcap_paths()
 
-            if summary is None:
-                raise RuntimeError(f"Could not read summary from {mcap_path}")
+        all_topics: dict[str, TopicInfo] = {}
+        global_start_ns = 0
+        global_end_ns = 0
+        total_message_count = 0
 
-            topics: dict[str, TopicInfo] = {}
-            # Build channel_id -> schema mapping
-            schema_map = {sid: s for sid, s in summary.schemas.items()}
+        for mcap_path in mcap_paths:
+            with open(mcap_path, "rb") as f:
+                reader = mcap_make_reader(f)
+                summary = reader.get_summary()
 
-            # Count messages per channel from statistics
-            channel_counts: dict[int, int] = {}
-            stats = summary.statistics
-            if stats and stats.channel_message_counts:
-                channel_counts = dict(stats.channel_message_counts)
+                if summary is None:
+                    raise RuntimeError(
+                        f"Could not read summary from {mcap_path}"
+                    )
 
-            for channel_id, channel in summary.channels.items():
-                schema = schema_map.get(channel.schema_id)
-                msg_type = schema.name if schema else ""
-                count = channel_counts.get(channel_id, 0)
-                topics[channel.topic] = TopicInfo(
-                    name=channel.topic,
-                    type=msg_type,
-                    count=count,
-                    serialization_format=channel.message_encoding or "cdr",
-                )
+                # Build channel_id -> schema mapping
+                schema_map = {
+                    sid: s for sid, s in summary.schemas.items()
+                }
 
-            # Timing from statistics
-            start_ns = 0
-            end_ns = 0
-            message_count = 0
-            if stats:
-                start_ns = stats.message_start_time
-                end_ns = stats.message_end_time
-                message_count = stats.message_count
+                # Count messages per channel from statistics
+                channel_counts: dict[int, int] = {}
+                stats = summary.statistics
+                if stats and stats.channel_message_counts:
+                    channel_counts = dict(
+                        stats.channel_message_counts
+                    )
 
-            return BagSummary(
-                path=self.path,
-                duration_ns=end_ns - start_ns,
-                start_time_ns=start_ns,
-                end_time_ns=end_ns,
-                message_count=message_count,
-                topics=topics,
-            )
+                for channel_id, channel in summary.channels.items():
+                    schema = schema_map.get(channel.schema_id)
+                    msg_type = schema.name if schema else ""
+                    count = channel_counts.get(channel_id, 0)
+                    topic_name = channel.topic
+                    if topic_name in all_topics:
+                        all_topics[topic_name] = TopicInfo(
+                            name=topic_name,
+                            type=msg_type,
+                            count=all_topics[topic_name].count + count,
+                            serialization_format=channel.message_encoding
+                            or "cdr",
+                        )
+                    else:
+                        all_topics[topic_name] = TopicInfo(
+                            name=topic_name,
+                            type=msg_type,
+                            count=count,
+                            serialization_format=channel.message_encoding
+                            or "cdr",
+                        )
 
-    def _read_mcap(self, topics: list[str] | None) -> Iterator[Message]:
-        mcap_path = self._get_mcap_path()
+                # Timing from statistics
+                if stats:
+                    start_ns = stats.message_start_time
+                    end_ns = stats.message_end_time
+                    msg_count = stats.message_count
+                else:
+                    start_ns = 0
+                    end_ns = 0
+                    msg_count = 0
 
-        # Try with decoder first, fall back to raw if schemas are incomplete
-        try:
-            yield from self._read_mcap_decoded(mcap_path, topics)
-        except Exception:
-            yield from self._read_mcap_raw(mcap_path, topics)
+                total_message_count += msg_count
+                if global_start_ns == 0 or (
+                    start_ns != 0 and start_ns < global_start_ns
+                ):
+                    global_start_ns = start_ns
+                if end_ns > global_end_ns:
+                    global_end_ns = end_ns
+
+        return BagSummary(
+            path=self.path,
+            duration_ns=global_end_ns - global_start_ns,
+            start_time_ns=global_start_ns,
+            end_time_ns=global_end_ns,
+            message_count=total_message_count,
+            topics=all_topics,
+        )
+
+    def _read_mcap(
+        self, topics: list[str] | None
+    ) -> Iterator[Message]:
+        mcap_paths = self._get_mcap_paths()
+        for mcap_path in mcap_paths:
+            # Try with decoder first, fall back to raw
+            try:
+                yield from self._read_mcap_decoded(mcap_path, topics)
+            except Exception:
+                yield from self._read_mcap_raw(mcap_path, topics)
 
     def _read_mcap_decoded(
         self, mcap_path: Path, topics: list[str] | None
     ) -> Iterator[Message]:
         with open(mcap_path, "rb") as f:
-            reader = mcap_make_reader(f, decoder_factories=[Ros2DecoderFactory()])
+            reader = mcap_make_reader(
+                f, decoder_factories=[Ros2DecoderFactory()]
+            )
             kwargs = {}
             if topics:
                 kwargs["topics"] = topics
-            for schema, channel, message, decoded_msg in reader.iter_decoded_messages(
-                **kwargs
-            ):
+            for (
+                schema,
+                channel,
+                message,
+                decoded_msg,
+            ) in reader.iter_decoded_messages(**kwargs):
                 topic_name = channel.topic
                 msg_type = schema.name if schema else ""
                 try:
                     if decoded_msg is not None:
                         data = _ros_msg_to_dict(decoded_msg)
                     else:
-                        data = _parse_cdr_basic(message.data, msg_type)
+                        data = _parse_cdr_basic(
+                            message.data, msg_type
+                        )
                 except Exception:
                     data = _parse_cdr_basic(message.data, msg_type)
 
@@ -292,14 +348,18 @@ class BagReader:
         self, mcap_path: Path, topics: list[str] | None
     ) -> Iterator[Message]:
         """Read mcap without decoder, using CDR basic parser as fallback."""
-        from mcap.reader import make_reader as mcap_make_reader_raw
+        from mcap.reader import (
+            make_reader as mcap_make_reader_raw,
+        )
 
         with open(mcap_path, "rb") as f:
             reader = mcap_make_reader_raw(f)
             kwargs = {}
             if topics:
                 kwargs["topics"] = topics
-            for schema, channel, message in reader.iter_messages(**kwargs):
+            for schema, channel, message in reader.iter_messages(
+                **kwargs
+            ):
                 topic_name = channel.topic
                 msg_type = schema.name if schema else ""
                 data = _parse_cdr_basic(message.data, msg_type)
@@ -311,68 +371,128 @@ class BagReader:
 
     # --- SQLite fallback backend (no ROS required) ---
 
-    def _get_db3_path(self) -> Path:
+    def _get_db3_paths(self) -> list[Path]:
+        """Return all .db3 files for this bag, sorted by name."""
         if self.path.suffix == ".db3":
-            return self.path
-        db3_files = list(self.path.glob("*.db3"))
+            return [self.path]
+        db3_files = sorted(self.path.glob("*.db3"))
         if not db3_files:
-            raise FileNotFoundError(f"No .db3 file found in {self.path}")
-        return db3_files[0]
+            raise FileNotFoundError(
+                f"No .db3 file found in {self.path}"
+            )
+        return db3_files
 
     def _summary_sqlite(self) -> BagSummary:
-        db_path = self._get_db3_path()
-        conn = sqlite3.connect(str(db_path))
-        try:
-            cursor = conn.cursor()
+        db_paths = self._get_db3_paths()
 
-            topics = {}
-            cursor.execute("SELECT id, name, type, serialization_format FROM topics")
-            topic_rows = {row[0]: row for row in cursor.fetchall()}
+        all_topics: dict[str, TopicInfo] = {}
+        global_start_ns = 0
+        global_end_ns = 0
+        total_count = 0
 
-            for tid, (_, name, type_, fmt) in topic_rows.items():
-                cursor.execute("SELECT COUNT(*) FROM messages WHERE topic_id = ?", (tid,))
-                count = cursor.fetchone()[0]
-                topics[name] = TopicInfo(
-                    name=name, type=type_, count=count, serialization_format=fmt
+        for db_path in db_paths:
+            conn = sqlite3.connect(str(db_path))
+            try:
+                cursor = conn.cursor()
+
+                cursor.execute(
+                    "SELECT id, name, type, serialization_format FROM topics"
                 )
+                topic_rows = {
+                    row[0]: row for row in cursor.fetchall()
+                }
 
-            cursor.execute("SELECT MIN(timestamp), MAX(timestamp), COUNT(*) FROM messages")
-            row = cursor.fetchone()
-            start_ns = row[0] or 0
-            end_ns = row[1] or 0
-            total_count = row[2] or 0
+                for tid, (_, name, type_, fmt) in topic_rows.items():
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM messages WHERE topic_id = ?",
+                        (tid,),
+                    )
+                    count = cursor.fetchone()[0]
+                    if name in all_topics:
+                        all_topics[name] = TopicInfo(
+                            name=name,
+                            type=type_,
+                            count=all_topics[name].count + count,
+                            serialization_format=fmt,
+                        )
+                    else:
+                        all_topics[name] = TopicInfo(
+                            name=name,
+                            type=type_,
+                            count=count,
+                            serialization_format=fmt,
+                        )
 
-            return BagSummary(
-                path=self.path,
-                duration_ns=end_ns - start_ns,
-                start_time_ns=start_ns,
-                end_time_ns=end_ns,
-                message_count=total_count,
-                topics=topics,
-            )
-        finally:
-            conn.close()
+                cursor.execute(
+                    "SELECT MIN(timestamp), MAX(timestamp), COUNT(*) FROM messages"
+                )
+                row = cursor.fetchone()
+                start_ns = row[0] or 0
+                end_ns = row[1] or 0
+                file_count = row[2] or 0
 
-    def _read_sqlite(self, topics: list[str] | None) -> Iterator[Message]:
-        db_path = self._get_db3_path()
+                total_count += file_count
+                if global_start_ns == 0 or (
+                    start_ns != 0 and start_ns < global_start_ns
+                ):
+                    global_start_ns = start_ns
+                if end_ns > global_end_ns:
+                    global_end_ns = end_ns
+            finally:
+                conn.close()
+
+        return BagSummary(
+            path=self.path,
+            duration_ns=global_end_ns - global_start_ns,
+            start_time_ns=global_start_ns,
+            end_time_ns=global_end_ns,
+            message_count=total_count,
+            topics=all_topics,
+        )
+
+    def _read_sqlite(
+        self, topics: list[str] | None
+    ) -> Iterator[Message]:
+        db_paths = self._get_db3_paths()
+        for db_path in db_paths:
+            yield from self._read_sqlite_file(db_path, topics)
+
+    def _read_sqlite_file(
+        self, db_path: Path, topics: list[str] | None
+    ) -> Iterator[Message]:
+        """Read messages from a single .db3 file."""
         conn = sqlite3.connect(str(db_path))
         try:
             cursor = conn.cursor()
 
-            cursor.execute("SELECT id, name, type, serialization_format FROM topics")
+            cursor.execute(
+                "SELECT id, name, type, serialization_format FROM topics"
+            )
             topic_map = {}
             for row in cursor.fetchall():
-                topic_map[row[0]] = {"name": row[1], "type": row[2], "format": row[3]}
+                topic_map[row[0]] = {
+                    "name": row[1],
+                    "type": row[2],
+                    "format": row[3],
+                }
 
-            topic_name_to_id = {v["name"]: k for k, v in topic_map.items()}
+            topic_name_to_id = {
+                v["name"]: k for k, v in topic_map.items()
+            }
 
             query = "SELECT topic_id, timestamp, data FROM messages"
             params: list = []
             if topics:
-                ids = [topic_name_to_id[t] for t in topics if t in topic_name_to_id]
+                ids = [
+                    topic_name_to_id[t]
+                    for t in topics
+                    if t in topic_name_to_id
+                ]
                 if ids:
                     placeholders = ",".join("?" * len(ids))
-                    query += f" WHERE topic_id IN ({placeholders})"
+                    query += (
+                        f" WHERE topic_id IN ({placeholders})"
+                    )
                     params = ids
 
             query += " ORDER BY timestamp"
@@ -380,11 +500,17 @@ class BagReader:
 
             for topic_id, timestamp_ns, raw_data in cursor:
                 info = topic_map.get(topic_id, {})
-                topic_name = info.get("name", f"unknown_{topic_id}")
+                topic_name = info.get(
+                    "name", f"unknown_{topic_id}"
+                )
                 msg_type = info.get("type", "")
 
                 data = _parse_cdr_basic(raw_data, msg_type)
-                yield Message(topic=topic_name, timestamp_ns=timestamp_ns, data=data)
+                yield Message(
+                    topic=topic_name,
+                    timestamp_ns=timestamp_ns,
+                    data=data,
+                )
         finally:
             conn.close()
 
@@ -411,64 +537,93 @@ def _parse_cdr_basic(raw_data: bytes, msg_type: str) -> dict:
         try:
             return parser(raw_data)
         except (struct.error, ValueError, IndexError):
-            return {"_raw_size": len(raw_data), "_msg_type": msg_type, "_parse_error": True}
+            return {
+                "_raw_size": len(raw_data),
+                "_msg_type": msg_type,
+                "_parse_error": True,
+            }
 
     return {"_raw_size": len(raw_data), "_msg_type": msg_type}
 
 
-def _read_cdr_header(data: bytes) -> int:
-    """Read CDR encapsulation header, return offset to payload."""
+def _read_cdr_header(data: bytes) -> tuple[int, str]:
+    """Read CDR encapsulation header, return (offset, endianness format string)."""
     # CDR encapsulation: 4 bytes header
     if len(data) < 4:
-        return 0
-    return 4
+        return 0, "<"
+    endian = "<" if data[1] == 0x01 else ">"
+    return 4, endian
 
 
 def _parse_navsatfix(data: bytes) -> dict:
     """Parse sensor_msgs/msg/NavSatFix from CDR."""
-    offset = _read_cdr_header(data)
+    offset, endian = _read_cdr_header(data)
     buf = data[offset:]
 
     # Header: stamp (sec:u32 + nanosec:u32) + frame_id (len:u32 + string)
     if len(buf) < 8:
         return {"_raw_size": len(data), "_parse_error": True}
 
-    sec, nanosec = struct.unpack_from("<II", buf, 0)
+    sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
     if len(buf) < 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
-    frame_id_len = struct.unpack_from("<I", buf, 8)[0]
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
+    frame_id_len = struct.unpack_from(f"{endian}I", buf, 8)[0]
     if frame_id_len > len(buf) - 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
     pos = 12 + frame_id_len
     # Align to 4 bytes
     pos = (pos + 3) & ~3
 
     # NavSatStatus: status (i8) + service (u16)
     if len(buf) < pos + 4:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec}
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+        }
 
-    status = struct.unpack_from("<b", buf, pos)[0]
+    status = struct.unpack_from(f"{endian}b", buf, pos)[0]
     pos = (pos + 2 + 1) & ~1  # align
-    service = struct.unpack_from("<H", buf, pos)[0]
+    service = struct.unpack_from(f"{endian}H", buf, pos)[0]
     pos += 2
     # Align to 8 bytes for doubles
     pos = (pos + 7) & ~7
 
     if len(buf) < pos + 24:
-        return {"stamp_sec": sec, "stamp_nanosec": nanosec, "status": status}
+        return {
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "status": status,
+        }
 
-    latitude, longitude, altitude = struct.unpack_from("<ddd", buf, pos)
+    latitude, longitude, altitude = struct.unpack_from(
+        f"{endian}ddd", buf, pos
+    )
     pos += 24
 
     # position_covariance: 9 doubles
     covariance = []
     if len(buf) >= pos + 72:
-        covariance = list(struct.unpack_from("<9d", buf, pos))
+        covariance = list(
+            struct.unpack_from(f"{endian}9d", buf, pos)
+        )
         pos += 72
 
     covariance_type = 0
     if len(buf) > pos:
-        covariance_type = struct.unpack_from("<B", buf, pos)[0]
+        covariance_type = struct.unpack_from(
+            f"{endian}B", buf, pos
+        )[0]
 
     return {
         "stamp_sec": sec,
@@ -485,18 +640,28 @@ def _parse_navsatfix(data: bytes) -> dict:
 
 def _parse_imu(data: bytes) -> dict:
     """Parse sensor_msgs/msg/Imu from CDR."""
-    offset = _read_cdr_header(data)
+    offset, endian = _read_cdr_header(data)
     buf = data[offset:]
 
     if len(buf) < 8:
         return {"_raw_size": len(data), "_parse_error": True}
 
-    sec, nanosec = struct.unpack_from("<II", buf, 0)
+    sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
     if len(buf) < 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
-    frame_id_len = struct.unpack_from("<I", buf, 8)[0]
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
+    frame_id_len = struct.unpack_from(f"{endian}I", buf, 8)[0]
     if frame_id_len > len(buf) - 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
     pos = 12 + frame_id_len
     pos = (pos + 7) & ~7  # align to 8 for doubles
 
@@ -504,8 +669,15 @@ def _parse_imu(data: bytes) -> dict:
 
     # orientation: x,y,z,w (4 doubles)
     if len(buf) >= pos + 32:
-        ox, oy, oz, ow = struct.unpack_from("<4d", buf, pos)
-        result["orientation"] = {"x": ox, "y": oy, "z": oz, "w": ow}
+        ox, oy, oz, ow = struct.unpack_from(
+            f"{endian}4d", buf, pos
+        )
+        result["orientation"] = {
+            "x": ox,
+            "y": oy,
+            "z": oz,
+            "w": ow,
+        }
         pos += 32
 
     # orientation_covariance: 9 doubles
@@ -514,8 +686,14 @@ def _parse_imu(data: bytes) -> dict:
 
     # angular_velocity: x,y,z
     if len(buf) >= pos + 24:
-        avx, avy, avz = struct.unpack_from("<3d", buf, pos)
-        result["angular_velocity"] = {"x": avx, "y": avy, "z": avz}
+        avx, avy, avz = struct.unpack_from(
+            f"{endian}3d", buf, pos
+        )
+        result["angular_velocity"] = {
+            "x": avx,
+            "y": avy,
+            "z": avz,
+        }
         pos += 24
 
     # angular_velocity_covariance: 9 doubles
@@ -524,69 +702,110 @@ def _parse_imu(data: bytes) -> dict:
 
     # linear_acceleration: x,y,z
     if len(buf) >= pos + 24:
-        lax, lay, laz = struct.unpack_from("<3d", buf, pos)
-        result["linear_acceleration"] = {"x": lax, "y": lay, "z": laz}
+        lax, lay, laz = struct.unpack_from(
+            f"{endian}3d", buf, pos
+        )
+        result["linear_acceleration"] = {
+            "x": lax,
+            "y": lay,
+            "z": laz,
+        }
         pos += 24
 
     return result
 
 
 def _parse_header(data: bytes) -> dict:
-    offset = _read_cdr_header(data)
+    offset, endian = _read_cdr_header(data)
     buf = data[offset:]
     if len(buf) < 8:
         return {"_raw_size": len(data)}
-    sec, nanosec = struct.unpack_from("<II", buf, 0)
+    sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
     return {"stamp_sec": sec, "stamp_nanosec": nanosec}
 
 
 def _parse_pose_stamped(data: bytes) -> dict:
-    offset = _read_cdr_header(data)
+    offset, endian = _read_cdr_header(data)
     buf = data[offset:]
     if len(buf) < 8:
         return {"_raw_size": len(data), "_parse_error": True}
 
-    sec, nanosec = struct.unpack_from("<II", buf, 0)
+    sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
     if len(buf) < 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
-    frame_id_len = struct.unpack_from("<I", buf, 8)[0]
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
+    frame_id_len = struct.unpack_from(f"{endian}I", buf, 8)[0]
     if frame_id_len > len(buf) - 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
     pos = 12 + frame_id_len
     pos = (pos + 7) & ~7
 
     result = {"stamp_sec": sec, "stamp_nanosec": nanosec}
 
     if len(buf) >= pos + 56:
-        px, py, pz = struct.unpack_from("<3d", buf, pos)
+        px, py, pz = struct.unpack_from(
+            f"{endian}3d", buf, pos
+        )
         pos += 24
-        ox, oy, oz, ow = struct.unpack_from("<4d", buf, pos)
+        ox, oy, oz, ow = struct.unpack_from(
+            f"{endian}4d", buf, pos
+        )
         result["position"] = {"x": px, "y": py, "z": pz}
-        result["orientation"] = {"x": ox, "y": oy, "z": oz, "w": ow}
+        result["orientation"] = {
+            "x": ox,
+            "y": oy,
+            "z": oz,
+            "w": ow,
+        }
 
     return result
 
 
 def _parse_pointcloud2_meta(data: bytes) -> dict:
     """Extract metadata from PointCloud2 (not the full point data)."""
-    offset = _read_cdr_header(data)
+    offset, endian = _read_cdr_header(data)
     buf = data[offset:]
     if len(buf) < 8:
         return {"_raw_size": len(data), "_parse_error": True}
 
-    sec, nanosec = struct.unpack_from("<II", buf, 0)
+    sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
     if len(buf) < 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
-    frame_id_len = struct.unpack_from("<I", buf, 8)[0]
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
+    frame_id_len = struct.unpack_from(f"{endian}I", buf, 8)[0]
     if frame_id_len > len(buf) - 12:
-        return {"_raw_size": len(data), "stamp_sec": sec, "stamp_nanosec": nanosec, "_parse_error": True}
+        return {
+            "_raw_size": len(data),
+            "stamp_sec": sec,
+            "stamp_nanosec": nanosec,
+            "_parse_error": True,
+        }
     pos = 12 + frame_id_len
     pos = (pos + 3) & ~3
 
-    result = {"stamp_sec": sec, "stamp_nanosec": nanosec, "_raw_size": len(data)}
+    result = {
+        "stamp_sec": sec,
+        "stamp_nanosec": nanosec,
+        "_raw_size": len(data),
+    }
 
     if len(buf) >= pos + 16:
-        height, width = struct.unpack_from("<II", buf, pos)
+        height, width = struct.unpack_from(
+            f"{endian}II", buf, pos
+        )
         result["height"] = height
         result["width"] = width
         result["num_points"] = height * width

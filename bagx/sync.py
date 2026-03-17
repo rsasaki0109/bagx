@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from typing import TextIO
 
@@ -11,6 +12,8 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -55,6 +58,10 @@ def analyze_sync(
             timestamps[msg.topic].append(msg.timestamp_ns)
 
     pairs = []
+    if not timestamps[topic_a]:
+        logger.warning("Topic %s not found or has no messages", topic_a)
+    if not timestamps[topic_b]:
+        logger.warning("Topic %s not found or has no messages", topic_b)
     if timestamps[topic_a] and timestamps[topic_b]:
         result = _compute_sync_pair(topic_a, topic_b, timestamps[topic_a], timestamps[topic_b])
         pairs.append(result)

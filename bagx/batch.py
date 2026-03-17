@@ -7,15 +7,18 @@ or run anomaly detection on multiple bags at once.
 from __future__ import annotations
 
 import csv
-import json
 import glob as glob_module
+import json
+import logging
 from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 
-from bagx.eval import EvalReport, evaluate_bag
 from bagx.anomaly import detect_anomalies
+from bagx.eval import EvalReport, evaluate_bag
+
+logger = logging.getLogger(__name__)
 
 BAG_EXTENSIONS = {".db3", ".mcap"}
 
@@ -66,6 +69,7 @@ def batch_eval(
     """
     bag_paths = resolve_bag_paths(paths)
     if not bag_paths:
+        logger.warning("No bag files found matching the given paths")
         return []
 
     reports: list[EvalReport] = []

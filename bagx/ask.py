@@ -6,7 +6,10 @@ along with a user question to an LLM for analysis.
 
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 
 def _build_bag_context(bag_path: str) -> str:
