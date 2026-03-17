@@ -140,8 +140,9 @@ class TestRateAnomalies:
         _create_db3(bag_path, topics, messages)
 
         report = detect_anomalies(str(bag_path))
-        rate_gaps = [a for a in report.anomalies if a.type == "rate_gap"]
-        assert len(rate_gaps) >= 1
+        # IMU topics are detected via imu_frequency_drop (not rate_gap)
+        freq_drops = [a for a in report.anomalies if a.type == "imu_frequency_drop"]
+        assert len(freq_drops) >= 1
 
     def test_no_rate_anomaly_in_uniform_data(self, imu_bag: Path):
         """Uniform 200Hz data should not produce rate gap anomalies."""
