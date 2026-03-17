@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bagx.eval import evaluate_bag
+from bagx.eval import EvalConfig, evaluate_bag
 
 
 class TestEvalGnss:
@@ -105,6 +105,46 @@ class TestEvalReport:
 
         assert "gnss" in data
         assert data["gnss"]["fix_rate"] == pytest.approx(0.9, abs=0.01)
+
+
+class TestEvalConfig:
+    """Test EvalConfig customization."""
+
+    def test_default_config_same_as_before(self, gnss_bag: Path):
+        """Default EvalConfig should produce the same results as no config."""
+        report_default = evaluate_bag(str(gnss_bag))
+        report_explicit = evaluate_bag(str(gnss_bag), config=EvalConfig())
+        assert report_default.gnss.score == pytest.approx(report_explicit.gnss.score)
+        assert report_default.overall_score == pytest.approx(report_explicit.overall_score)
+
+    def test_custom_config_gnss_fix_only(self, gnss_bag: Path):
+        """With gnss_hdop_weight=0, score should depend only on fix rate."""
+        config = EvalConfig(gnss_fix_weight=1.0, gnss_hdop_weight=0.0)
+        report = evaluate_bag(str(gnss_bag), config=config)
+        # fix_rate is 0.9, so fix_score = min(0.9 * 100, 100) = 90
+        # With fix_weight=1.0 and hdop_weight=0.0, score = 90 * 1.0 + 0 = 90
+        assert report.gnss.score == pytest.approx(90.0, abs=1.0)
+
+    def test_custom_config_gnss_hdop_only(self, gnss_bag: Path):
+        """With gnss_fix_weight=0, score should depend only on HDOP."""
+        config = EvalConfig(gnss_fix_weight=0.0, gnss_hdop_weight=1.0)
+        report = evaluate_bag(str(gnss_bag), config=config)
+        # Score should be purely HDOP-based, different from fix-only
+        assert 0 <= report.gnss.score <= 100
+        # Verify it's different from fix-only score
+        config_fix = EvalConfig(gnss_fix_weight=1.0, gnss_hdop_weight=0.0)
+        report_fix = evaluate_bag(str(gnss_bag), config=config_fix)
+        assert report.gnss.score != pytest.approx(report_fix.gnss.score, abs=0.1)
+
+    def test_evaluate_bag_accepts_config_parameter(self, gnss_bag: Path):
+        """Verify evaluate_bag actually accepts and uses the config parameter."""
+        config = EvalConfig(gnss_hdop_scale=0.0)  # HDOP has no effect
+        report = evaluate_bag(str(gnss_bag), config=config)
+        assert report.gnss is not None
+        # With hdop_scale=0, hdop_score = max(0, 100 - 0) = 100
+        # So overall gnss score should be higher than default
+        default_report = evaluate_bag(str(gnss_bag))
+        assert report.gnss.score >= default_report.gnss.score
 
 
 def _assert_no_nan(obj):

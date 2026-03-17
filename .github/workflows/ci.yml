@@ -28,4 +28,4 @@ jobs:
         run: ruff check .
 
       - name: Run tests
-        run: pytest
+        run: pytest --cov=bagx --cov-report=term-missing --cov-report=xml

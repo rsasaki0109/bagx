@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pyarrow.parquet as pq
+import pytest
 
 from bagx.export import export_bag
 
@@ -82,6 +83,16 @@ class TestExportJson:
             data = json.load(f)
 
         assert data[0]["timestamp_sec"] < 1.0
+
+
+class TestExportValidation:
+    def test_export_raises_for_unsupported_format(self, gnss_bag: Path, tmp_path: Path):
+        with pytest.raises(ValueError, match="Unsupported format"):
+            export_bag(str(gnss_bag), str(tmp_path / "out"), fmt="csv")
+
+    def test_export_raises_for_xml_format(self, gnss_bag: Path, tmp_path: Path):
+        with pytest.raises(ValueError, match="Unsupported format"):
+            export_bag(str(gnss_bag), str(tmp_path / "out"), fmt="xml")
 
 
 class TestExportOptions:
