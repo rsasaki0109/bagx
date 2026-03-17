@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import Optional
 
 import typer
 from rich.console import Console
+
+from bagx import __version__
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"bagx {__version__}")
+        raise typer.Exit()
+
 
 app = typer.Typer(
     name="bagx",
@@ -18,10 +29,29 @@ batch_app = typer.Typer(help="Batch operations on multiple bags")
 app.add_typer(batch_app, name="batch")
 
 
+@app.callback()
+def main_callback(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress all but error messages"),
+    version: Optional[bool] = typer.Option(
+        None, "--version", callback=_version_callback, is_eager=True, help="Show version and exit"
+    ),
+) -> None:
+    """Post-processing analysis engine for ROS2 rosbag data."""
+    level = logging.WARNING
+    if verbose:
+        level = logging.DEBUG
+    elif quiet:
+        level = logging.ERROR
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=level)
+
+
 @batch_app.command("eval")
 def batch_eval_cmd(
     paths: list[str] = typer.Argument(..., help="Bag files, directories, or glob patterns"),
-    csv_output: Optional[str] = typer.Option(None, "--csv", "-c", help="Output CSV summary to file"),
+    csv_output: Optional[str] = typer.Option(
+        None, "--csv", "-c", help="Output CSV summary to file"
+    ),
 ) -> None:
     """Evaluate quality of multiple bag files.
 
@@ -42,7 +72,9 @@ def batch_eval_cmd(
 @batch_app.command("anomaly")
 def batch_anomaly_cmd(
     paths: list[str] = typer.Argument(..., help="Bag files, directories, or glob patterns"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
 ) -> None:
     """Run anomaly detection on multiple bag files.
 
@@ -65,7 +97,9 @@ def batch_anomaly_cmd(
 @app.command()
 def eval(
     bag: str = typer.Argument(..., help="Path to the bag file (.db3 or directory)"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -74,30 +108,28 @@ def eval(
     """
     from bagx.eval import evaluate_bag, print_eval_report
 
-    json_fp = None
-    if json_output:
-        json_fp = open(json_output, "w")
-
     try:
-        report = evaluate_bag(bag, output_json=json_fp)
+        report = evaluate_bag(bag)
         print_eval_report(report, console)
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error evaluating bag: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if json_fp:
-            json_fp.close()
-            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
 
 
 @app.command()
 def compare(
     bag_a: str = typer.Argument(..., help="Path to the first bag file"),
     bag_b: str = typer.Argument(..., help="Path to the second bag file"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
 ) -> None:
     """Compare quality metrics of two bag files.
 
@@ -106,23 +138,19 @@ def compare(
     """
     from bagx.compare import compare_bags, print_compare_report
 
-    json_fp = None
-    if json_output:
-        json_fp = open(json_output, "w")
-
     try:
-        report = compare_bags(bag_a, bag_b, output_json=json_fp)
+        report = compare_bags(bag_a, bag_b)
         print_compare_report(report, console)
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error comparing bags: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if json_fp:
-            json_fp.close()
-            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
 
 
 @app.command()
@@ -130,7 +158,9 @@ def sync(
     bag: str = typer.Argument(..., help="Path to the bag file"),
     topic_a: str = typer.Argument(..., help="First topic name"),
     topic_b: str = typer.Argument(..., help="Second topic name"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
 ) -> None:
     """Analyze time synchronization between two topics.
 
@@ -138,23 +168,19 @@ def sync(
     """
     from bagx.sync import analyze_sync, print_sync_report
 
-    json_fp = None
-    if json_output:
-        json_fp = open(json_output, "w")
-
     try:
-        report = analyze_sync(bag, topic_a, topic_b, output_json=json_fp)
+        report = analyze_sync(bag, topic_a, topic_b)
         print_sync_report(report, console)
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error analyzing sync: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if json_fp:
-            json_fp.close()
-            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
 
 
 @app.command()
@@ -162,9 +188,15 @@ def export(
     bag: str = typer.Argument(..., help="Path to the bag file"),
     output_dir: str = typer.Option("./export", "--output", "-o", help="Output directory"),
     fmt: str = typer.Option("parquet", "--format", "-f", help="Output format: parquet or json"),
-    topics: Optional[str] = typer.Option(None, "--topics", "-t", help="Comma-separated topic names (default: all)"),
-    ai: bool = typer.Option(False, "--ai", help="Enable AI-friendly mode (relative timestamps, normalized)"),
-    flatten: bool = typer.Option(True, "--flatten/--no-flatten", help="Flatten nested message fields"),
+    topics: Optional[str] = typer.Option(
+        None, "--topics", "-t", help="Comma-separated topic names (default: all)"
+    ),
+    ai: bool = typer.Option(
+        False, "--ai", help="Enable AI-friendly mode (relative timestamps, normalized)"
+    ),
+    flatten: bool = typer.Option(
+        True, "--flatten/--no-flatten", help="Flatten nested message fields"
+    ),
 ) -> None:
     """Export bag data to AI/analytics-friendly formats.
 
@@ -198,7 +230,9 @@ def export(
 def anomaly(
     bag: str = typer.Argument(..., help="Path to the bag file"),
     topic: Optional[str] = typer.Option(None, "--topic", "-t", help="Analyze only this topic"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
 ) -> None:
     """Detect anomalies and outliers in sensor data.
 
@@ -207,31 +241,29 @@ def anomaly(
     """
     from bagx.anomaly import detect_anomalies, print_anomaly_report
 
-    json_fp = None
-    if json_output:
-        json_fp = open(json_output, "w")
-
     topics = [topic] if topic else None
 
     try:
-        report = detect_anomalies(bag, topics=topics, output_json=json_fp)
+        report = detect_anomalies(bag, topics=topics)
         print_anomaly_report(report, console)
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error detecting anomalies: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if json_fp:
-            json_fp.close()
-            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
 
 
 @app.command()
 def scenario(
     bag: str = typer.Argument(..., help="Path to the bag file"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
 ) -> None:
     """Identify and extract dangerous or interesting scenarios.
 
@@ -240,23 +272,19 @@ def scenario(
     """
     from bagx.scenario import detect_scenarios, print_scenario_report
 
-    json_fp = None
-    if json_output:
-        json_fp = open(json_output, "w")
-
     try:
-        report = detect_scenarios(bag, output_json=json_fp)
+        report = detect_scenarios(bag)
         print_scenario_report(report, console)
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error detecting scenarios: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if json_fp:
-            json_fp.close()
-            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
 
 
 @app.command()
@@ -291,9 +319,15 @@ def ask(
 @app.command()
 def scene(
     bag: str = typer.Argument(..., help="Path to the bag file"),
-    csv_output: Optional[str] = typer.Option(None, "--csv", "-c", help="Export scene states to CSV file"),
-    json_output: Optional[str] = typer.Option(None, "--json", "-j", help="Output JSON report to file"),
-    topics: Optional[str] = typer.Option(None, "--topics", "-t", help="Comma-separated topic names (default: auto-detect)"),
+    csv_output: Optional[str] = typer.Option(
+        None, "--csv", "-c", help="Export scene states to CSV file"
+    ),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
+    topics: Optional[str] = typer.Option(
+        None, "--topics", "-t", help="Comma-separated topic names (default: auto-detect)"
+    ),
 ) -> None:
     """Extract 3D state (position, orientation, velocity) time series.
 
@@ -308,27 +342,24 @@ def scene(
     if topics:
         topic_list = [t.strip() for t in topics.split(",")]
 
-    json_fp = None
-    if json_output:
-        json_fp = open(json_output, "w")
-
     try:
-        report = extract_scene(bag, topics=topic_list, output_json=json_fp)
+        report = extract_scene(bag, topics=topic_list)
         print_scene_report(report, console)
 
         if csv_output:
             export_scene_csv(report, _Path(csv_output))
             console.print(f"CSV exported to: [cyan]{csv_output}[/cyan]")
+
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error extracting scene: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if json_fp:
-            json_fp.close()
-            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
 
 
 @app.command()

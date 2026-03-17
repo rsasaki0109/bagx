@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
@@ -16,6 +17,8 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader, Message
+
+logger = logging.getLogger(__name__)
 
 
 # Message types that carry scene-relevant data
@@ -296,6 +299,8 @@ def extract_scene(
             if _is_scene_type(info.type)
         }
         read_topics = list(topic_type_map.keys()) if topic_type_map else None
+        if not topic_type_map:
+            logger.warning("No scene-relevant topics found in %s", bag_path)
 
     states: list[SceneState] = []
     sources: dict[str, int] = {}

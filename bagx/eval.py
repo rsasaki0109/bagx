@@ -7,6 +7,7 @@ producing a structured quality report with a composite score.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import asdict, dataclass, field
 from typing import TextIO
@@ -16,6 +17,26 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader, Message
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EvalConfig:
+    """Configurable scoring thresholds for evaluation.
+
+    Users can tune these for their sensor suite via the Python API.
+    """
+
+    gnss_fix_weight: float = 0.6
+    gnss_hdop_weight: float = 0.4
+    gnss_hdop_scale: float = 10.0  # HDOP multiplier for score
+    imu_accel_noise_excellent: float = 0.05  # m/s²
+    imu_accel_noise_scale: float = 200.0
+    imu_gyro_noise_excellent: float = 0.005  # rad/s
+    imu_gyro_noise_scale: float = 2000.0
+    sync_delay_excellent_ms: float = 5.0
+    sync_delay_scale: float = 1.5
 
 
 @dataclass
@@ -87,8 +108,15 @@ def _clean_nan(obj):
     return obj
 
 
-def evaluate_bag(bag_path: str, output_json: TextIO | None = None) -> EvalReport:
+def evaluate_bag(
+    bag_path: str,
+    output_json: TextIO | None = None,
+    config: EvalConfig | None = None,
+) -> EvalReport:
     """Run full quality evaluation on a bag file."""
+    if config is None:
+        config = EvalConfig()
+
     reader = BagReader(bag_path)
     summary = reader.summary()
 
@@ -127,22 +155,20 @@ def evaluate_bag(bag_path: str, output_json: TextIO | None = None) -> EvalReport
 
     # Evaluate GNSS
     if gnss_messages:
-        report.gnss = _evaluate_gnss(gnss_messages)
+        report.gnss = _evaluate_gnss(gnss_messages, config)
+    else:
+        logger.info("No GNSS topics found in %s", bag_path)
 
     # Evaluate IMU
     if imu_messages:
-        report.imu = _evaluate_imu(imu_messages)
+        report.imu = _evaluate_imu(imu_messages, config)
+    else:
+        logger.info("No IMU topics found in %s", bag_path)
 
     # Evaluate sync
     sync_topics = [t for t in all_topics if len(topic_timestamps.get(t, [])) > 10]
     if len(sync_topics) >= 2:
-        report.sync = _evaluate_sync(topic_timestamps, sync_topics)
-
-    # Evaluate GNSS even with very few messages (>= 1)
-    # (already handled above since gnss_messages check is just truthiness)
-
-    # Evaluate IMU even with very few messages (>= 1)
-    # (already handled above since imu_messages check is just truthiness)
+        report.sync = _evaluate_sync(topic_timestamps, sync_topics, config)
 
     # Overall score
     scores = []
@@ -161,7 +187,7 @@ def evaluate_bag(bag_path: str, output_json: TextIO | None = None) -> EvalReport
     return report
 
 
-def _evaluate_gnss(messages: list[Message]) -> GnssMetrics:
+def _evaluate_gnss(messages: list[Message], config: EvalConfig) -> GnssMetrics:
     metrics = GnssMetrics(total_messages=len(messages))
 
     statuses = []
@@ -213,13 +239,17 @@ def _evaluate_gnss(messages: list[Message]) -> GnssMetrics:
 
     # Score: weighted combination
     fix_score = min(metrics.fix_rate * 100, 100)
-    hdop_score = max(0, 100 - metrics.hdop_mean * 10) if not math.isnan(metrics.hdop_mean) else 50
-    metrics.score = fix_score * 0.6 + hdop_score * 0.4
+    hdop_score = (
+        max(0, 100 - metrics.hdop_mean * config.gnss_hdop_scale)
+        if not math.isnan(metrics.hdop_mean)
+        else 50
+    )
+    metrics.score = fix_score * config.gnss_fix_weight + hdop_score * config.gnss_hdop_weight
 
     return metrics
 
 
-def _evaluate_imu(messages: list[Message]) -> ImuMetrics:
+def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
     metrics = ImuMetrics(total_messages=len(messages))
 
     accel_x, accel_y, accel_z = [], [], []
@@ -255,12 +285,16 @@ def _evaluate_imu(messages: list[Message]) -> ImuMetrics:
     # Bias stability via Allan variance approximation (windowed std)
     if len(accel_x) > 100:
         window = len(accel_x) // 10
-        windowed = [np.std(accel_x[i : i + window]) for i in range(0, len(accel_x) - window, window)]
+        windowed = [
+            np.std(accel_x[i : i + window]) for i in range(0, len(accel_x) - window, window)
+        ]
         metrics.accel_bias_stability = float(np.min(windowed)) if windowed else float("nan")
 
     if len(gyro_x) > 100:
         window = len(gyro_x) // 10
-        windowed = [np.std(gyro_x[i : i + window]) for i in range(0, len(gyro_x) - window, window)]
+        windowed = [
+            np.std(gyro_x[i : i + window]) for i in range(0, len(gyro_x) - window, window)
+        ]
         metrics.gyro_bias_stability = float(np.min(windowed)) if windowed else float("nan")
 
     # Frequency
@@ -272,17 +306,36 @@ def _evaluate_imu(messages: list[Message]) -> ImuMetrics:
             metrics.frequency_hz = float(1.0 / np.median(diffs))
 
     # Score: low noise is good
-    accel_noise = np.mean(
-        [n for n in [metrics.accel_noise_x, metrics.accel_noise_y, metrics.accel_noise_z] if not math.isnan(n)]
-    ) if accel_x else 1.0
-    gyro_noise = np.mean(
-        [n for n in [metrics.gyro_noise_x, metrics.gyro_noise_y, metrics.gyro_noise_z] if not math.isnan(n)]
-    ) if gyro_x else 1.0
+    accel_noise = (
+        np.mean(
+            [
+                n
+                for n in [metrics.accel_noise_x, metrics.accel_noise_y, metrics.accel_noise_z]
+                if not math.isnan(n)
+            ]
+        )
+        if accel_x
+        else 1.0
+    )
+    gyro_noise = (
+        np.mean(
+            [
+                n
+                for n in [metrics.gyro_noise_x, metrics.gyro_noise_y, metrics.gyro_noise_z]
+                if not math.isnan(n)
+            ]
+        )
+        if gyro_x
+        else 1.0
+    )
 
-    # Normalize: accel noise < 0.1 m/s² is excellent, > 1.0 is bad
-    accel_score = max(0, min(100, 100 - (accel_noise - 0.05) * 200))
-    # gyro noise < 0.01 rad/s is excellent, > 0.1 is bad
-    gyro_score = max(0, min(100, 100 - (gyro_noise - 0.005) * 2000))
+    # Normalize using config thresholds
+    accel_score = max(
+        0, min(100, 100 - (accel_noise - config.imu_accel_noise_excellent) * config.imu_accel_noise_scale)
+    )
+    gyro_score = max(
+        0, min(100, 100 - (gyro_noise - config.imu_gyro_noise_excellent) * config.imu_gyro_noise_scale)
+    )
 
     metrics.score = accel_score * 0.5 + gyro_score * 0.5
 
@@ -290,7 +343,9 @@ def _evaluate_imu(messages: list[Message]) -> ImuMetrics:
 
 
 def _evaluate_sync(
-    topic_timestamps: dict[str, list[int]], topics: list[str]
+    topic_timestamps: dict[str, list[int]],
+    topics: list[str],
+    config: EvalConfig,
 ) -> SyncMetrics:
     metrics = SyncMetrics()
 
@@ -325,8 +380,10 @@ def _evaluate_sync(
 
     if all_delays:
         mean_delay = np.mean(all_delays)
-        # Score: <10ms is excellent, >100ms is bad
-        metrics.score = max(0, min(100, 100 - (mean_delay - 5) * 1.5))
+        # Score: configurable thresholds
+        metrics.score = max(
+            0, min(100, 100 - (mean_delay - config.sync_delay_excellent_ms) * config.sync_delay_scale)
+        )
 
     return metrics
 
@@ -337,7 +394,9 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         console = Console()
 
     console.print(f"\n[bold]Bag Evaluation: [cyan]{report.bag_path}[/cyan][/bold]")
-    console.print(f"Duration: {report.duration_sec:.1f}s | Messages: {report.total_messages:,} | Topics: {report.topic_count}")
+    console.print(
+        f"Duration: {report.duration_sec:.1f}s | Messages: {report.total_messages:,} | Topics: {report.topic_count}"
+    )
 
     if report.gnss:
         g = report.gnss
@@ -346,10 +405,22 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         table.add_column("Value", justify="right")
         table.add_row("Messages", str(g.total_messages))
         table.add_row("Fix Rate", f"{g.fix_rate:.1%}")
-        table.add_row("HDOP (mean)", f"{g.hdop_mean:.2f}" if not math.isnan(g.hdop_mean) else "N/A")
-        table.add_row("HDOP (max)", f"{g.hdop_max:.2f}" if not math.isnan(g.hdop_max) else "N/A")
-        table.add_row("Altitude (mean±std)", f"{g.altitude_mean:.1f}±{g.altitude_std:.1f}" if not math.isnan(g.altitude_mean) else "N/A")
-        table.add_row("Score", f"[{'green' if g.score >= 70 else 'yellow' if g.score >= 40 else 'red'}]{g.score:.1f}/100[/]")
+        table.add_row(
+            "HDOP (mean)", f"{g.hdop_mean:.2f}" if not math.isnan(g.hdop_mean) else "N/A"
+        )
+        table.add_row(
+            "HDOP (max)", f"{g.hdop_max:.2f}" if not math.isnan(g.hdop_max) else "N/A"
+        )
+        table.add_row(
+            "Altitude (mean+/-std)",
+            f"{g.altitude_mean:.1f}+/-{g.altitude_std:.1f}"
+            if not math.isnan(g.altitude_mean)
+            else "N/A",
+        )
+        table.add_row(
+            "Score",
+            f"[{'green' if g.score >= 70 else 'yellow' if g.score >= 40 else 'red'}]{g.score:.1f}/100[/]",
+        )
         console.print(table)
 
     if report.imu:
@@ -358,11 +429,30 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         table.add_column("Metric", style="bold")
         table.add_column("Value", justify="right")
         table.add_row("Messages", str(m.total_messages))
-        table.add_row("Frequency", f"{m.frequency_hz:.1f} Hz" if not math.isnan(m.frequency_hz) else "N/A")
-        table.add_row("Accel Noise (xyz)", f"{m.accel_noise_x:.4f}, {m.accel_noise_y:.4f}, {m.accel_noise_z:.4f}" if not math.isnan(m.accel_noise_x) else "N/A")
-        table.add_row("Gyro Noise (xyz)", f"{m.gyro_noise_x:.6f}, {m.gyro_noise_y:.6f}, {m.gyro_noise_z:.6f}" if not math.isnan(m.gyro_noise_x) else "N/A")
-        table.add_row("Accel Bias Stability", f"{m.accel_bias_stability:.4f}" if not math.isnan(m.accel_bias_stability) else "N/A")
-        table.add_row("Score", f"[{'green' if m.score >= 70 else 'yellow' if m.score >= 40 else 'red'}]{m.score:.1f}/100[/]")
+        table.add_row(
+            "Frequency",
+            f"{m.frequency_hz:.1f} Hz" if not math.isnan(m.frequency_hz) else "N/A",
+        )
+        table.add_row(
+            "Accel Noise (xyz)",
+            f"{m.accel_noise_x:.4f}, {m.accel_noise_y:.4f}, {m.accel_noise_z:.4f}"
+            if not math.isnan(m.accel_noise_x)
+            else "N/A",
+        )
+        table.add_row(
+            "Gyro Noise (xyz)",
+            f"{m.gyro_noise_x:.6f}, {m.gyro_noise_y:.6f}, {m.gyro_noise_z:.6f}"
+            if not math.isnan(m.gyro_noise_x)
+            else "N/A",
+        )
+        table.add_row(
+            "Accel Bias Stability",
+            f"{m.accel_bias_stability:.4f}" if not math.isnan(m.accel_bias_stability) else "N/A",
+        )
+        table.add_row(
+            "Score",
+            f"[{'green' if m.score >= 70 else 'yellow' if m.score >= 40 else 'red'}]{m.score:.1f}/100[/]",
+        )
         console.print(table)
 
     if report.sync:
@@ -374,13 +464,22 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         table.add_column("Std (ms)", justify="right")
         for i, (t1, t2) in enumerate(s.topic_pairs):
             table.add_row(
-                f"{t1} ↔ {t2}",
+                f"{t1} <-> {t2}",
                 f"{s.mean_delay_ms[i]:.1f}",
                 f"{s.max_delay_ms[i]:.1f}",
                 f"{s.std_delay_ms[i]:.1f}",
             )
-        table.add_row("Score", f"[{'green' if s.score >= 70 else 'yellow' if s.score >= 40 else 'red'}]{s.score:.1f}/100[/]", "", "")
+        table.add_row(
+            "Score",
+            f"[{'green' if s.score >= 70 else 'yellow' if s.score >= 40 else 'red'}]{s.score:.1f}/100[/]",
+            "",
+            "",
+        )
         console.print(table)
 
-    color = "green" if report.overall_score >= 70 else "yellow" if report.overall_score >= 40 else "red"
-    console.print(f"\n[bold]Overall Score: [{color}]{report.overall_score:.1f}/100[/{color}][/bold]\n")
+    color = (
+        "green" if report.overall_score >= 70 else "yellow" if report.overall_score >= 40 else "red"
+    )
+    console.print(
+        f"\n[bold]Overall Score: [{color}]{report.overall_score:.1f}/100[/{color}][/bold]\n"
+    )

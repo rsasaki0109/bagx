@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,8 @@ from rich.console import Console
 
 from bagx.reader import BagReader
 from bagx.schema import flatten_message
+
+logger = logging.getLogger(__name__)
 
 
 def export_bag(
@@ -35,7 +38,13 @@ def export_bag(
 
     Returns:
         Dict mapping topic names to output file paths.
+
+    Raises:
+        ValueError: If fmt is not 'parquet' or 'json'.
     """
+    if fmt not in ("parquet", "json"):
+        raise ValueError(f"Unsupported format: {fmt}. Use 'parquet' or 'json'.")
+
     reader = BagReader(bag_path)
     summary = reader.summary()
     out_dir = Path(output_dir)
@@ -89,6 +98,10 @@ def export_bag(
         # Skip topics with no messages
         if not rows:
             continue
+
+        # Warn if all messages are stub data
+        if all("_raw_size" in r and len(r) <= 3 for r in rows):  # timestamp_ns, timestamp_sec, _raw_size
+            logger.warning("Topic %s contains only stub data (no decoded fields)", topic_name)
 
         # Sanitize topic name for filename
         safe_name = topic_name.strip("/").replace("/", "_")
