@@ -1,0 +1,3 @@
+# bagx.reader
+
+::: bagx.reader
