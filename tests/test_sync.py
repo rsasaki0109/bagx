@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from bagx.sync import analyze_sync, analyze_sync_multi
 

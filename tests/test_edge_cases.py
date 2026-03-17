@@ -9,7 +9,6 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-import pytest
 
 from tests.conftest import _create_db3, build_imu_cdr, build_navsatfix_cdr
 

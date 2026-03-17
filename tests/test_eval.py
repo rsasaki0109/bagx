@@ -3,6 +3,8 @@
 import math
 from pathlib import Path
 
+import pytest
+
 from bagx.eval import evaluate_bag
 
 
@@ -113,7 +115,4 @@ def _assert_no_nan(obj):
         for v in obj:
             _assert_no_nan(v)
     elif isinstance(obj, float):
-        assert not math.isnan(obj), f"Found NaN in report dict"
-
-
-import pytest
+        assert not math.isnan(obj), "Found NaN in report dict"
