@@ -127,16 +127,30 @@ def detect_scenarios(
     for topic, data in gnss_data.items():
         scenarios.extend(_detect_gnss_lost(topic, data, gnss_lost_threshold_sec))
 
-    # Detect sensor dropouts
+    # Detect sensor dropouts — skip meta/log topics
+    _DROPOUT_SKIP = {
+        "/rosout", "/parameter_events", "/events/write_split",
+        "/tf_static", "/clicked_point", "/initialpose", "/move_base_simple/goal",
+    }
     for topic, timestamps in topic_timestamps.items():
+        if topic in _DROPOUT_SKIP:
+            continue
         scenarios.extend(_detect_sensor_dropout(topic, timestamps, dropout_threshold_sec))
 
     # Detect high dynamics
     for topic, data in imu_data.items():
         scenarios.extend(_detect_high_dynamics(topic, data, accel_threshold_mps2))
 
-    # Detect sync degradation
-    active_topics = [t for t in all_topics if len(topic_timestamps.get(t, [])) > 5]
+    # Detect sync degradation — exclude meta/log topics that aren't real sensor data
+    _META_TOPIC_PATTERNS = {
+        "/rosout", "/parameter_events", "/events/write_split",
+        "/tf_static", "/clicked_point", "/initialpose", "/move_base_simple/goal",
+    }
+    active_topics = [
+        t for t in all_topics
+        if len(topic_timestamps.get(t, [])) > 10
+        and t not in _META_TOPIC_PATTERNS
+    ]
     if len(active_topics) >= 2:
         scenarios.extend(
             _detect_sync_degraded(topic_timestamps, active_topics, sync_delay_threshold_ms)
