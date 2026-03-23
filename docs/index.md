@@ -10,7 +10,8 @@
 ```bash
 # Score a bag's sensor quality
 bagx eval recording.db3
-bagx eval recording.db3 --rules examples/custom_rules/warehouse_bot.json
+bagx rules list
+bagx eval recording.db3 --rules warehouse_bot
 
 # Compare two runs
 bagx compare run_A.db3 run_B.db3

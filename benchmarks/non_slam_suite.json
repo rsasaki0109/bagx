@@ -18,6 +18,22 @@
       }
     },
     {
+      "name": "nvidia-r2b-whitetunnel",
+      "bag_path": "${BAGX_REALBAGS}/r2b_whitetunnel",
+      "report_type": "eval",
+      "expect": {
+        "required_domains": ["Perception"],
+        "required_recommendations": [
+          "Perception topics detected",
+          "Camera calibration topics are recorded"
+        ],
+        "forbidden_recommendations": [
+          "No GNSS data"
+        ],
+        "min_domain_score": 95
+      }
+    },
+    {
       "name": "nvidia-r2b-galileo2",
       "bag_path": "${BAGX_REALBAGS}/r2b_galileo2",
       "report_type": "eval",

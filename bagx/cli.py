@@ -27,6 +27,8 @@ console = Console()
 
 batch_app = typer.Typer(help="Batch operations on multiple bags")
 app.add_typer(batch_app, name="batch")
+rules_app = typer.Typer(help="Custom rule plugins")
+app.add_typer(rules_app, name="rules")
 
 
 @app.callback()
@@ -112,7 +114,7 @@ def benchmark(
         None, "--json", "-j", help="Output JSON report to file"
     ),
     rules_path: Optional[str] = typer.Option(
-        None, "--rules", help="Optional custom rule JSON applied to all benchmark cases"
+        None, "--rules", help="Optional custom rule file or plugin name applied to all benchmark cases"
     ),
     case: Optional[list[str]] = typer.Option(
         None, "--case", help="Run only the named benchmark case(s)"
@@ -155,7 +157,7 @@ def eval(
         None, "--json", "-j", help="Output JSON report to file"
     ),
     rules_path: Optional[str] = typer.Option(
-        None, "--rules", help="Optional custom rule JSON for custom topic/message conventions"
+        None, "--rules", help="Optional custom rule file or plugin name for custom topic/message conventions"
     ),
 ) -> None:
     """Evaluate quality of a single bag file.
@@ -178,6 +180,27 @@ def eval(
     except Exception as e:
         console.print(f"[red]Error evaluating bag: {e}[/red]")
         raise typer.Exit(1)
+
+
+@rules_app.command("list")
+def rules_list() -> None:
+    """List discoverable custom-rule plugins."""
+    from rich.table import Table
+
+    from bagx.custom_rules import discover_rule_plugins
+
+    plugins = discover_rule_plugins()
+    if not plugins:
+        console.print("No custom-rule plugins found.")
+        return
+
+    table = Table(title="Custom Rule Plugins", show_header=True)
+    table.add_column("Name", style="bold")
+    table.add_column("Source")
+    table.add_column("Description")
+    for plugin in plugins:
+        table.add_row(plugin.name, plugin.source, plugin.description or "-")
+    console.print(table)
 
 
 @app.command()

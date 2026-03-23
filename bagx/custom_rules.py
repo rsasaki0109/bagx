@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
+from importlib import metadata, resources
 from pathlib import Path
 from typing import Any
 
@@ -65,34 +67,42 @@ class CustomDomainResult:
     recommendations: list[str] = field(default_factory=list)
 
 
-def load_custom_rule_set(path: str) -> CustomRuleSet:
-    """Load a custom rule set from JSON."""
-    rule_path = Path(path)
-    with open(rule_path) as f:
-        raw = json.load(f)
+@dataclass
+class RulePlugin:
+    """Discoverable custom-rule plugin."""
 
-    domains: list[CustomDomainRule] = []
-    for domain in raw.get("domains", []):
-        name = str(domain.get("name", "")).strip()
-        if not name:
-            raise ValueError("custom rule domain is missing a name")
+    name: str
+    source: str
+    description: str = ""
+    builtin: bool = False
 
-        match_topics = [
-            _parse_selector(item)
-            for item in domain.get("match_topics", domain.get("topics", []))
-        ]
-        checks = [_parse_check(item) for item in domain.get("checks", [])]
-        min_matches = int(domain.get("min_matches", len(match_topics) if match_topics else 0))
-        domains.append(
-            CustomDomainRule(
-                name=name,
-                min_matches=max(min_matches, 0),
-                match_topics=match_topics,
-                checks=checks,
-            )
-        )
 
-    return CustomRuleSet(source_path=str(rule_path), domains=domains)
+def load_custom_rule_set(spec: str) -> CustomRuleSet:
+    """Load a custom rule set from a path, plugin name, or entry point."""
+    source_label, payload = _resolve_rule_payload(spec)
+    if isinstance(payload, CustomRuleSet):
+        if not payload.source_path:
+            payload.source_path = source_label
+        return payload
+
+    raw = _coerce_rule_document(payload, source_label)
+    return _parse_rule_document(raw, source_label)
+
+
+def discover_rule_plugins() -> list[RulePlugin]:
+    """Return available built-in and externally discoverable rule plugins."""
+    plugins: dict[str, RulePlugin] = {}
+
+    for plugin in _iter_builtin_rule_plugins():
+        plugins.setdefault(plugin.name, plugin)
+
+    for plugin in _iter_env_rule_plugins():
+        plugins.setdefault(plugin.name, plugin)
+
+    for plugin in _iter_entry_point_rule_plugins():
+        plugins.setdefault(plugin.name, plugin)
+
+    return sorted(plugins.values(), key=lambda plugin: (plugin.name.lower(), plugin.source))
 
 
 def evaluate_custom_rule_set(
@@ -150,6 +160,212 @@ def select_topics(topic_info: dict[str, dict[str, Any]], selector: TopicSelector
         if _selector_matches(topic_name, str(info.get("type", "")), selector):
             matches.append(topic_name)
     return sorted(matches, key=lambda name: (-float(topic_info[name].get("rate_hz", 0.0) or 0.0), name))
+
+
+def _resolve_rule_payload(spec: str) -> tuple[str, dict[str, Any] | CustomRuleSet]:
+    path = Path(os.path.expandvars(spec)).expanduser()
+    if path.exists():
+        with open(path) as f:
+            return str(path.resolve()), json.load(f)
+
+    builtin_plugin = _load_builtin_rule_plugin(spec)
+    if builtin_plugin is not None:
+        return builtin_plugin
+
+    env_plugin = _load_env_rule_plugin(spec)
+    if env_plugin is not None:
+        return env_plugin
+
+    entry_point_plugin = _load_entry_point_rule_plugin(spec)
+    if entry_point_plugin is not None:
+        return entry_point_plugin
+
+    known_plugins = ", ".join(plugin.name for plugin in discover_rule_plugins())
+    if known_plugins:
+        raise FileNotFoundError(
+            f"Custom rule file or plugin not found: {spec}. Available plugins: {known_plugins}"
+        )
+    raise FileNotFoundError(f"Custom rule file or plugin not found: {spec}")
+
+
+def _parse_rule_document(raw: dict[str, Any], source_label: str) -> CustomRuleSet:
+    domains: list[CustomDomainRule] = []
+    for domain in raw.get("domains", []):
+        name = str(domain.get("name", "")).strip()
+        if not name:
+            raise ValueError(f"custom rule domain is missing a name in {source_label}")
+
+        match_topics = [
+            _parse_selector(item)
+            for item in domain.get("match_topics", domain.get("topics", []))
+        ]
+        checks = [_parse_check(item) for item in domain.get("checks", [])]
+        min_matches = int(domain.get("min_matches", len(match_topics) if match_topics else 0))
+        domains.append(
+            CustomDomainRule(
+                name=name,
+                min_matches=max(min_matches, 0),
+                match_topics=match_topics,
+                checks=checks,
+            )
+        )
+
+    return CustomRuleSet(source_path=source_label, domains=domains)
+
+
+def _coerce_rule_document(payload: Any, source_label: str) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, (str, os.PathLike)):
+        payload_path = Path(payload).expanduser()
+        with open(payload_path) as f:
+            return json.load(f)
+    raise ValueError(
+        f"Unsupported custom rule payload from {source_label}: expected dict, path, or CustomRuleSet"
+    )
+
+
+def _iter_builtin_rule_plugins() -> list[RulePlugin]:
+    plugins: list[RulePlugin] = []
+    for path, raw in _iter_builtin_rule_documents():
+        name = str(raw.get("plugin_name", path.stem))
+        plugins.append(
+            RulePlugin(
+                name=name,
+                source=f"builtin:{path.stem}",
+                description=str(raw.get("description", "")).strip(),
+                builtin=True,
+            )
+        )
+    return plugins
+
+
+def _iter_builtin_rule_documents() -> list[tuple[Path, dict[str, Any]]]:
+    documents: list[tuple[Path, dict[str, Any]]] = []
+    try:
+        root = resources.files("bagx").joinpath("rule_plugins")
+    except (ModuleNotFoundError, FileNotFoundError):
+        return documents
+
+    try:
+        entries = sorted(root.iterdir(), key=lambda item: item.name)
+    except FileNotFoundError:
+        return documents
+
+    for entry in entries:
+        if not entry.name.endswith(".json"):
+            continue
+        try:
+            text = entry.read_text(encoding="utf-8")
+            documents.append((Path(entry.name), json.loads(text)))
+        except Exception:
+            continue
+    return documents
+
+
+def _load_builtin_rule_plugin(name: str) -> tuple[str, dict[str, Any]] | None:
+    normalized = name.strip().lower()
+    for path, raw in _iter_builtin_rule_documents():
+        plugin_name = str(raw.get("plugin_name", path.stem)).strip()
+        if normalized in {path.stem.lower(), plugin_name.lower(), f"builtin:{path.stem.lower()}"}:
+            return f"builtin:{path.stem}", raw
+    return None
+
+
+def _iter_env_rule_plugins() -> list[RulePlugin]:
+    plugins: list[RulePlugin] = []
+    for directory in _iter_rule_plugin_dirs():
+        for path in sorted(directory.glob("*.json")):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            name = str(raw.get("plugin_name", path.stem))
+            plugins.append(
+                RulePlugin(
+                    name=name,
+                    source=str(path),
+                    description=str(raw.get("description", "")).strip(),
+                )
+            )
+    return plugins
+
+
+def _load_env_rule_plugin(name: str) -> tuple[str, dict[str, Any]] | None:
+    normalized = name.strip().lower()
+    for directory in _iter_rule_plugin_dirs():
+        for path in sorted(directory.glob("*.json")):
+            if path.stem.lower() != normalized:
+                try:
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                plugin_name = str(raw.get("plugin_name", path.stem)).strip().lower()
+                if plugin_name != normalized:
+                    continue
+                return str(path), raw
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return str(path), raw
+    return None
+
+
+def _iter_rule_plugin_dirs() -> list[Path]:
+    raw = os.environ.get("BAGX_RULE_PLUGIN_PATH", "")
+    if not raw:
+        return []
+    directories: list[Path] = []
+    for entry in raw.split(os.pathsep):
+        if not entry.strip():
+            continue
+        path = Path(os.path.expandvars(entry)).expanduser()
+        if path.is_dir():
+            directories.append(path)
+    return directories
+
+
+def _iter_entry_point_rule_plugins() -> list[RulePlugin]:
+    plugins: list[RulePlugin] = []
+    for entry_point in _iter_rule_entry_points():
+        description = ""
+        try:
+            payload = _load_entry_point_payload(entry_point)
+            if isinstance(payload, dict):
+                description = str(payload.get("description", "")).strip()
+        except Exception:
+            description = ""
+        plugins.append(
+            RulePlugin(
+                name=entry_point.name,
+                source=f"entrypoint:{entry_point.value}",
+                description=description,
+            )
+        )
+    return plugins
+
+
+def _load_entry_point_rule_plugin(name: str) -> tuple[str, dict[str, Any] | CustomRuleSet] | None:
+    normalized = name.strip().lower()
+    for entry_point in _iter_rule_entry_points():
+        if entry_point.name.lower() != normalized:
+            continue
+        return f"entrypoint:{entry_point.value}", _load_entry_point_payload(entry_point)
+    return None
+
+
+def _iter_rule_entry_points() -> list[metadata.EntryPoint]:
+    try:
+        return sorted(metadata.entry_points(group="bagx.rules"), key=lambda item: item.name.lower())
+    except TypeError:
+        entry_points = metadata.entry_points()
+        return sorted(entry_points.get("bagx.rules", []), key=lambda item: item.name.lower())
+
+
+def _load_entry_point_payload(entry_point: metadata.EntryPoint) -> dict[str, Any] | CustomRuleSet:
+    loaded = entry_point.load()
+    payload = loaded() if callable(loaded) else loaded
+    if isinstance(payload, CustomRuleSet):
+        return payload
+    return _coerce_rule_document(payload, f"entrypoint:{entry_point.value}")
 
 
 def _parse_selector(data: dict[str, Any]) -> TopicSelector:

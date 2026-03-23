@@ -81,7 +81,7 @@ def run_benchmark_suite(
     manifest_rules_path = manifest.get("rules_path")
     cli_rules_path = None
     if rules_path:
-        cli_rules_path = str(Path(os.path.expandvars(rules_path)).expanduser().resolve())
+        cli_rules_path = _resolve_rules_spec(str(rules_path), manifest_file.parent)
     raw_cases = manifest.get("cases", [])
     if selected_cases:
         selected = set(selected_cases)
@@ -119,11 +119,7 @@ def _run_benchmark_case(
     bag_path = str(case.get("bag_path", ""))
     resolved_path = _resolve_manifest_path(bag_path, manifest_dir)
     raw_rules_path = case.get("rules_path", default_rules_path)
-    resolved_rules_path = (
-        str(_resolve_manifest_path(str(raw_rules_path), manifest_dir))
-        if raw_rules_path
-        else None
-    )
+    resolved_rules_path = _resolve_rules_spec(str(raw_rules_path), manifest_dir) if raw_rules_path else None
     report_type = str(case.get("report_type", "eval"))
 
     if report_type != "eval":
@@ -183,6 +179,22 @@ def _resolve_manifest_path(raw_path: str, manifest_dir: Path) -> Path:
     if expanded_env.is_absolute():
         return expanded_env
     return (manifest_dir / expanded_env).resolve()
+
+
+def _resolve_rules_spec(raw_path: str, manifest_dir: Path) -> str:
+    expanded = Path(os.path.expandvars(raw_path)).expanduser()
+    if expanded.is_absolute():
+        return str(expanded.resolve())
+
+    manifest_relative = (manifest_dir / expanded).resolve()
+    if manifest_relative.exists():
+        return str(manifest_relative)
+
+    cwd_relative = expanded.resolve()
+    if cwd_relative.exists():
+        return str(cwd_relative)
+
+    return raw_path
 
 
 def _evaluate_expectations(

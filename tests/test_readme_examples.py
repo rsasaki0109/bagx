@@ -245,7 +245,19 @@ class TestBenchmarkSuites:
 
 
 class TestCustomRules:
-    """bagx eval recording.db3 --rules rules.json → custom domain checks."""
+    """bagx rules list / bagx eval --rules warehouse_bot → custom domain checks."""
+
+    def test_rules_list(self):
+        result = runner.invoke(app, ["rules", "list"])
+
+        assert result.exit_code == 0
+        assert "warehouse_bot" in result.output
+
+    def test_eval_with_builtin_rule_plugin(self, custom_rule_bag: Path):
+        result = runner.invoke(app, ["eval", str(custom_rule_bag), "--rules", "warehouse_bot"])
+
+        assert result.exit_code == 0
+        assert "WarehouseBot custom rules matched" in result.output
 
     def test_eval_with_custom_rules(self, custom_rule_bag: Path, custom_rules_file: Path):
         result = runner.invoke(

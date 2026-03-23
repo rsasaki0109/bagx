@@ -103,6 +103,12 @@ class TestCliEval:
         assert "WarehouseBot custom rules matched" in result.output
         assert "/warehouse_bot/wheel_odom" in result.output
 
+    def test_eval_with_builtin_rule_plugin(self, custom_rule_bag: Path):
+        result = runner.invoke(app, ["eval", str(custom_rule_bag), "--rules", "warehouse_bot"])
+        assert result.exit_code == 0
+        assert "WarehouseBot custom rules matched" in result.output
+        assert "/warehouse_bot/mission/result" in result.output
+
 
 class TestCliCompare:
     def test_compare(self, gnss_bag: Path, gnss_bag_degraded: Path):
@@ -310,6 +316,34 @@ class TestCliBenchmarkRules:
 
         assert result.exit_code == 0
         assert "warehouse-bot" in result.output
+
+    def test_benchmark_with_builtin_plugin_name(self, custom_rule_bag: Path, tmp_path: Path):
+        manifest_path = tmp_path / "custom-benchmark.json"
+        manifest_path.write_text(json.dumps({
+            "suite_name": "custom-rules-suite",
+            "cases": [
+                {
+                    "name": "warehouse-bot",
+                    "bag_path": str(custom_rule_bag),
+                    "expect": {
+                        "required_domains": ["WarehouseBot"],
+                    },
+                }
+            ],
+        }))
+
+        result = runner.invoke(app, ["benchmark", str(manifest_path), "--rules", "warehouse_bot"])
+
+        assert result.exit_code == 0
+        assert "warehouse-bot" in result.output
+
+
+class TestCliRulePlugins:
+    def test_rules_list(self):
+        result = runner.invoke(app, ["rules", "list"])
+
+        assert result.exit_code == 0
+        assert "warehouse_bot" in result.output
 
 
 class TestCliAsk:

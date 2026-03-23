@@ -7,7 +7,7 @@ Evaluate a single bag and produce a composite quality score (0–100).
 ```bash
 bagx eval recording.db3
 bagx eval recording.db3 --json report.json
-bagx eval recording.db3 --rules examples/custom_rules/warehouse_bot.json
+bagx eval recording.db3 --rules warehouse_bot
 ```
 
 ## What it measures
@@ -45,6 +45,8 @@ If your bag uses custom messages, you can still layer in domain-specific checks 
 - topic types
 - message rates
 - timestamp-based latency between topics
+
+The `--rules` argument accepts either a JSON file path or a plugin name from `bagx rules list`.
 
 See [custom-rules — Custom Message Rules](custom-rules.md) for the rule format.
 
