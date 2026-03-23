@@ -8,6 +8,12 @@ def is_sync_candidate(topic_name: str, topic_type: str) -> bool:
     name = topic_name.lower()
     type_name = topic_type.lower()
 
+    excluded_type_parts = (
+        "camerainfo",
+    )
+    if any(part in type_name for part in excluded_type_parts):
+        return False
+
     excluded_name_parts = (
         "/clock",
         "clock",
