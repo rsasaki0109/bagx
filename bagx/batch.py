@@ -199,4 +199,17 @@ def print_batch_eval_table(
 
     console.print()
     console.print(table)
-    console.print(f"\n[bold]{len(reports)} bag(s) evaluated.[/bold]\n")
+
+    # Rank and recommend
+    ranked = sorted(reports, key=lambda r: r.overall_score, reverse=True)
+    best = ranked[0]
+    worst = ranked[-1]
+    best_name = Path(best.bag_path).name
+    worst_name = Path(worst.bag_path).name
+
+    console.print(f"\n[bold]{len(reports)} bag(s) evaluated.[/bold]")
+    if len(reports) > 1:
+        console.print(f"  [green]:heavy_check_mark:[/green] Best: [bold]{best_name}[/bold] ({best.overall_score:.1f})")
+        if worst.overall_score < best.overall_score:
+            console.print(f"  [red]:x:[/red] Worst: [bold]{worst_name}[/bold] ({worst.overall_score:.1f})")
+    console.print()

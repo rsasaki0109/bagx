@@ -332,36 +332,40 @@ def print_anomaly_report(report: AnomalyReport, console: Console | None = None) 
     console.print(f"Total anomalies found: {report.total_anomalies}")
 
     if not report.anomalies:
-        console.print("[green]No anomalies detected.[/green]")
+        console.print("[green]No anomalies detected. Data looks clean.[/green]\n")
         return
 
-    table = Table(show_header=True)
-    table.add_column("Timestamp (s)", justify="right")
-    table.add_column("Topic", style="bold")
-    table.add_column("Type")
-    table.add_column("Severity", justify="center")
-    table.add_column("Description")
+    # Summary by type
+    from collections import Counter
 
-    for event in report.anomalies:
-        severity_colors = {"low": "yellow", "medium": "dark_orange", "high": "red"}
-        color = severity_colors.get(event.severity, "white")
-        table.add_row(
-            f"{event.timestamp_sec:.3f}",
-            event.topic,
-            event.type,
-            f"[{color}]{event.severity}[/{color}]",
-            event.description,
-        )
+    type_counts = Counter(e.type for e in report.anomalies)
+    severity_counts = Counter(e.severity for e in report.anomalies)
 
+    # Type breakdown table
+    table = Table(title="Anomaly Summary", show_header=True)
+    table.add_column("Type", style="bold")
+    table.add_column("Count", justify="right")
+    table.add_column("Worst Topic")
+    for atype, count in type_counts.most_common():
+        worst_topic = Counter(
+            e.topic for e in report.anomalies if e.type == atype
+        ).most_common(1)[0][0]
+        table.add_row(atype, str(count), worst_topic)
     console.print(table)
 
-    # Summary by severity
-    severity_counts = {"low": 0, "medium": 0, "high": 0}
-    for event in report.anomalies:
-        severity_counts[event.severity] = severity_counts.get(event.severity, 0) + 1
-
+    # Severity bar
     console.print(
-        f"\n  [red]High: {severity_counts['high']}[/red] | "
-        f"[dark_orange]Medium: {severity_counts['medium']}[/dark_orange] | "
-        f"[yellow]Low: {severity_counts['low']}[/yellow]\n"
+        f"  [red]High: {severity_counts.get('high', 0)}[/red] | "
+        f"[dark_orange]Medium: {severity_counts.get('medium', 0)}[/dark_orange] | "
+        f"[yellow]Low: {severity_counts.get('low', 0)}[/yellow]"
     )
+
+    # Show first few high-severity events
+    high_events = [e for e in report.anomalies if e.severity == "high"]
+    if high_events:
+        console.print(f"\n[bold red]Top issues ({min(len(high_events), 5)} of {len(high_events)} high-severity):[/bold red]")
+        for event in high_events[:5]:
+            console.print(
+                f"  [red]{event.timestamp_sec:.1f}s[/red] {event.topic}: {event.description}"
+            )
+    console.print()
