@@ -212,4 +212,22 @@ def print_sync_report(report: SyncReport, console: Console | None = None) -> Non
         )
 
     console.print(table)
+
+    # Verdict
+    for p in report.pairs:
+        if p.mean_delay_ms < 5:
+            console.print(
+                f"  [green]:heavy_check_mark:[/green] {p.topic_a} ↔ {p.topic_b}: "
+                f"[green]{p.mean_delay_ms:.1f}ms[/green] — excellent for tightly-coupled fusion"
+            )
+        elif p.mean_delay_ms < 20:
+            console.print(
+                f"  [green]:heavy_check_mark:[/green] {p.topic_a} ↔ {p.topic_b}: "
+                f"[green]{p.mean_delay_ms:.1f}ms[/green] — good for most SLAM methods"
+            )
+        else:
+            console.print(
+                f"  [yellow]:warning:[/yellow] {p.topic_a} ↔ {p.topic_b}: "
+                f"[yellow]{p.mean_delay_ms:.0f}ms[/yellow] — enable per-point deskew / timestamp compensation"
+            )
     console.print()
