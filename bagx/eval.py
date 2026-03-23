@@ -956,6 +956,8 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
     generic_control_topics = _select_control_command_topics(topics)
     generic_action_status_topics = _select_action_status_topics(topics)
     generic_action_feedback_topics = _select_action_feedback_topics(topics)
+    generic_action_result_topics = _select_action_result_topics(topics)
+    generic_service_event_topics = _select_service_event_topics(topics)
 
     # --- Autoware detection ---
     autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
@@ -1256,10 +1258,27 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
             recs.append(
                 f"  [green]:heavy_check_mark:[/green] Action feedback ({generic_action_feedback_topics[0]}) recorded — goal progress is observable"
             )
+        if generic_action_result_topics:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Action result ({generic_action_result_topics[0]}) recorded — completion outcome is observable"
+            )
+        elif generic_action_status_topics or generic_action_feedback_topics:
+            recs.append(
+                "  [yellow]:warning:[/yellow] Action activity is present but no result topic was recorded — success/failure completion is hard to inspect"
+            )
+
+        if generic_service_event_topics:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Service event ({generic_service_event_topics[0]}) recorded — request/response auditing is possible"
+            )
 
         control_pipelines = []
         if generic_planning_topics and generic_control_topics:
             control_pipelines.append((generic_planning_topics[0], generic_control_topics[0], "planner → command onset"))
+        if generic_planning_topics and generic_action_result_topics:
+            control_pipelines.append((generic_planning_topics[0], generic_action_result_topics[0], "planner → action result"))
+        if generic_service_event_topics and generic_planning_topics:
+            control_pipelines.append((generic_service_event_topics[0], generic_planning_topics[0], "service call → planner output"))
         _add_event_response_latency_recs(
             recs,
             report._topic_timestamps,
@@ -1663,6 +1682,8 @@ def _compute_domain_score(report: EvalReport) -> float | None:
         planning_topics = _select_generic_planning_topics(topics)
         action_status_topics = _select_action_status_topics(topics)
         action_feedback_topics = _select_action_feedback_topics(topics)
+        action_result_topics = _select_action_result_topics(topics)
+        service_event_topics = _select_service_event_topics(topics)
 
         control_scores = []
         if odom_topics:
@@ -1673,8 +1694,15 @@ def _compute_domain_score(report: EvalReport) -> float | None:
             control_scores.append(_rate_goal_score(topics[control_command_topics[0]]["rate_hz"], 10.0))
         if planning_topics:
             control_scores.append(100.0)
+        workflow_visibility = 0.0
         if action_status_topics or action_feedback_topics:
-            control_scores.append(100.0)
+            workflow_visibility += 40.0
+        if action_result_topics:
+            workflow_visibility += 40.0
+        if service_event_topics:
+            workflow_visibility += 20.0
+        if workflow_visibility > 0:
+            control_scores.append(min(100.0, workflow_visibility))
         if control_scores:
             scores.append(float(np.mean(control_scores)))
 
@@ -1811,6 +1839,24 @@ def _select_action_feedback_topics(topics: dict[str, dict]) -> list[str]:
     )
 
 
+def _select_action_result_topics(topics: dict[str, dict]) -> list[str]:
+    """Select generic action result topics or hidden get_result channels."""
+    return _select_topics(
+        topics,
+        suffixes=("/result",),
+        contains=("_action/get_result", "_action/result"),
+    )
+
+
+def _select_service_event_topics(topics: dict[str, dict]) -> list[str]:
+    """Select generic service event topics."""
+    return _select_topics(
+        topics,
+        suffixes=("/_service_event",),
+        contains=("_service_event",),
+    )
+
+
 def _has_nav2_signature(topics: dict[str, dict]) -> bool:
     """Return whether topics look like Nav2 rather than generic control."""
     odom_topics = _select_topics(
@@ -1912,6 +1958,8 @@ def _has_control_signature(topics: dict[str, dict]) -> bool:
     planning_topics = _select_generic_planning_topics(topics)
     action_status_topics = _select_action_status_topics(topics)
     action_feedback_topics = _select_action_feedback_topics(topics)
+    action_result_topics = _select_action_result_topics(topics)
+    service_event_topics = _select_service_event_topics(topics)
 
     state_feedback = bool(odom_topics or joint_state_topics)
     action_activity = bool(action_status_topics or action_feedback_topics)
@@ -1919,6 +1967,8 @@ def _has_control_signature(topics: dict[str, dict]) -> bool:
         (state_feedback and bool(control_command_topics))
         or (bool(planning_topics) and bool(control_command_topics))
         or (state_feedback and action_activity)
+        or (bool(planning_topics) and bool(action_result_topics))
+        or (bool(planning_topics) and bool(service_event_topics))
     )
 
 

@@ -226,7 +226,11 @@ class TestFrameworkDetection:
         assert "Control command (/drive/cmd_vel) at 20Hz" in recommendations
         assert "Planner output (/planner/path) recorded 8 times" in recommendations
         assert "Action status (/mission/_action/status) recorded" in recommendations
+        assert "Action result (/mission/result) recorded" in recommendations
+        assert "Service event (/planner/compute_path/_service_event) recorded" in recommendations
         assert "planner → command onset" in recommendations
+        assert "planner → action result" in recommendations
+        assert "service call → planner output" in recommendations
         assert "command → state feedback" in recommendations
         assert "Nav2 topics detected" not in recommendations
         assert "No GNSS data" not in recommendations

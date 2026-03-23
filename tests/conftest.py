@@ -779,6 +779,8 @@ def generic_control_bag(tmp_path: Path) -> Path:
         {"name": "/drive/cmd_vel", "type": "geometry_msgs/msg/TwistStamped", "format": "cdr"},
         {"name": "/planner/path", "type": "nav_msgs/msg/Path", "format": "cdr"},
         {"name": "/mission/_action/status", "type": "action_msgs/msg/GoalStatusArray", "format": "cdr"},
+        {"name": "/mission/result", "type": "example_interfaces/action/Fibonacci_Result", "format": "cdr"},
+        {"name": "/planner/compute_path/_service_event", "type": "nav_msgs/srv/GetPlan_Event", "format": "cdr"},
     ]
     messages = []
     base_ns = 1_700_000_198_000_000_000
@@ -807,10 +809,20 @@ def generic_control_bag(tmp_path: Path) -> Path:
 
     for i in range(8):
         plan_ts = base_ns + i * 1_000_000_000
+        messages.append({
+            "topic": "/planner/compute_path/_service_event",
+            "timestamp_ns": plan_ts - 5_000_000,
+            "data": build_stub_cdr(),
+        })
         messages.append({"topic": "/planner/path", "timestamp_ns": plan_ts, "data": build_stub_cdr()})
         messages.append({
             "topic": "/mission/_action/status",
             "timestamp_ns": plan_ts + 10_000_000,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/mission/result",
+            "timestamp_ns": plan_ts + 180_000_000,
             "data": build_stub_cdr(),
         })
 

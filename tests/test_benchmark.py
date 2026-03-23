@@ -122,6 +122,8 @@ class TestBenchmarkSuite:
                         "required_recommendations": [
                             "Planning/control topics detected",
                             "planner → command onset",
+                            "Action result (/mission/result) recorded",
+                            "Service event (/planner/compute_path/_service_event) recorded",
                         ],
                         "forbidden_recommendations": ["Nav2 topics detected"],
                         "min_domain_score": 90,

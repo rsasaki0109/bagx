@@ -32,4 +32,12 @@ class TestRateAnomalyCandidate:
             "/panda_arm_controller/follow_joint_trajectory/_action/status",
             "action_msgs/msg/GoalStatusArray",
         )
+        assert not is_rate_anomaly_candidate(
+            "/planner/compute_path/_service_event",
+            "nav_msgs/srv/GetPlan_Event",
+        )
+        assert not is_rate_anomaly_candidate(
+            "/mission/result",
+            "example_interfaces/action/Fibonacci_Result",
+        )
         assert not is_rate_anomaly_candidate("/tf_static", "tf2_msgs/msg/TFMessage")
