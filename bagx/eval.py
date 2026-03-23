@@ -311,15 +311,15 @@ def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
         metrics.gyro_noise_y = float(np.std(np.diff(gyro_y)) / math.sqrt(2))
         metrics.gyro_noise_z = float(np.std(np.diff(gyro_z)) / math.sqrt(2))
 
-    # Frequency
+    # Frequency: use duration/count to handle bursty timestamps correctly
+    # (median of intervals fails when messages arrive in bursts)
     dt = float("nan")
     if len(timestamps) >= 2:
-        ts = np.array(timestamps, dtype=np.float64)
-        diffs = np.diff(ts) / 1e9  # to seconds
-        diffs = diffs[diffs > 0]
-        if len(diffs) > 0:
-            dt = float(np.median(diffs))
-            metrics.frequency_hz = float(1.0 / dt)
+        ts_sorted = sorted(timestamps)
+        duration_s = (ts_sorted[-1] - ts_sorted[0]) / 1e9
+        if duration_s > 0:
+            metrics.frequency_hz = float((len(timestamps) - 1) / duration_s)
+            dt = float(duration_s / (len(timestamps) - 1))
 
     # Detect if data is static: accel magnitude should be ~9.81 with low variance
     if len(accel_x) > 100:
