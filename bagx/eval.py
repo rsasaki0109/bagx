@@ -598,5 +598,116 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         "green" if report.overall_score >= 70 else "yellow" if report.overall_score >= 40 else "red"
     )
     console.print(
-        f"\n[bold]Overall Score: [{color}]{report.overall_score:.1f}/100[/{color}][/bold]\n"
+        f"\n[bold]Overall Score: [{color}]{report.overall_score:.1f}/100[/{color}][/bold]"
     )
+
+    # Actionable recommendations
+    recs = generate_recommendations(report)
+    if recs:
+        console.print("\n[bold]Recommendations:[/bold]")
+        for rec in recs:
+            console.print(f"  {rec}")
+    console.print()
+
+
+def generate_recommendations(report: EvalReport) -> list[str]:
+    """Generate actionable recommendations based on eval results."""
+    recs: list[str] = []
+
+    # --- GNSS ---
+    if report.gnss:
+        g = report.gnss
+        if g.fix_rate >= 0.95:
+            recs.append(
+                f"[green]:heavy_check_mark:[/green] GNSS fix rate {g.fix_rate:.0%} — suitable as ground truth reference"
+            )
+        elif g.fix_rate >= 0.5:
+            recs.append(
+                f"[yellow]:warning:[/yellow] GNSS fix rate {g.fix_rate:.0%} — usable but expect gaps in GNSS-aided SLAM"
+            )
+        else:
+            recs.append(
+                f"[red]:x:[/red] GNSS fix rate {g.fix_rate:.0%} — unreliable, do not use as ground truth"
+            )
+
+        if not math.isnan(g.hdop_mean) and g.hdop_mean > 5.0:
+            recs.append(
+                f"[yellow]:warning:[/yellow] HDOP {g.hdop_mean:.1f} is high — GNSS position accuracy is degraded"
+            )
+    else:
+        recs.append(
+            "[dim]:information_source:[/dim] No GNSS data — ground truth will need an external source (motion capture, total station, etc.)"
+        )
+
+    # --- IMU ---
+    if report.imu:
+        m = report.imu
+        accel_noise = np.mean([
+            n for n in [m.accel_noise_x, m.accel_noise_y, m.accel_noise_z]
+            if not math.isnan(n)
+        ]) if not math.isnan(m.accel_noise_x) else float("nan")
+
+        gyro_noise = np.mean([
+            n for n in [m.gyro_noise_x, m.gyro_noise_y, m.gyro_noise_z]
+            if not math.isnan(n)
+        ]) if not math.isnan(m.gyro_noise_x) else float("nan")
+
+        if not math.isnan(accel_noise):
+            if accel_noise < 0.05:
+                recs.append(
+                    f"[green]:heavy_check_mark:[/green] IMU accel noise {accel_noise:.4f} m/s\u00b2 — excellent, set imu_acc_noise_density to {accel_noise:.4f}"
+                )
+            elif accel_noise < 0.2:
+                recs.append(
+                    f"[green]:heavy_check_mark:[/green] IMU accel noise {accel_noise:.4f} m/s\u00b2 — good for LIO, set imu_acc_noise_density to {accel_noise:.4f}"
+                )
+            else:
+                recs.append(
+                    f"[yellow]:warning:[/yellow] IMU accel noise {accel_noise:.4f} m/s\u00b2 — noisy, LiDAR-only odometry may outperform LIO"
+                )
+
+        if not math.isnan(gyro_noise):
+            if gyro_noise < 0.01:
+                recs.append(
+                    f"[green]:heavy_check_mark:[/green] IMU gyro noise {gyro_noise:.6f} rad/s — set imu_gyro_noise_density to {gyro_noise:.6f}"
+                )
+            else:
+                recs.append(
+                    f"[yellow]:warning:[/yellow] IMU gyro noise {gyro_noise:.6f} rad/s — consider lowering IMU integration weight in SLAM"
+                )
+
+        if not math.isnan(m.frequency_hz):
+            if m.frequency_hz < 100:
+                recs.append(
+                    f"[yellow]:warning:[/yellow] IMU rate {m.frequency_hz:.0f}Hz is low — 200Hz+ recommended for tightly-coupled LIO"
+                )
+
+        if m.noise_note and "static" in m.noise_note.lower() and "record" in m.noise_note.lower():
+            recs.append(
+                f"[dim]:information_source:[/dim] {m.noise_note}"
+            )
+    else:
+        recs.append(
+            "[dim]:information_source:[/dim] No IMU data — LiDAR-only odometry (KISS-ICP) recommended"
+        )
+
+    # --- Sync ---
+    if report.sync and report.sync.mean_delay_ms:
+        worst_delay = max(report.sync.mean_delay_ms)
+        worst_idx = report.sync.mean_delay_ms.index(worst_delay)
+        t1, t2 = report.sync.topic_pairs[worst_idx]
+
+        if worst_delay < 5:
+            recs.append(
+                f"[green]:heavy_check_mark:[/green] Sensor sync excellent ({worst_delay:.1f}ms) — suitable for tightly-coupled fusion"
+            )
+        elif worst_delay < 20:
+            recs.append(
+                f"[green]:heavy_check_mark:[/green] Sensor sync good ({worst_delay:.1f}ms) — suitable for most SLAM methods"
+            )
+        else:
+            recs.append(
+                f"[yellow]:warning:[/yellow] {t1} \u2194 {t2} sync delay {worst_delay:.0f}ms — enable per-point deskew / timestamp compensation in SLAM"
+            )
+
+    return recs
