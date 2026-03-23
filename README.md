@@ -5,7 +5,7 @@
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rsasaki0109.github.io/bagx/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**One command to check if your rosbag data is ready — for SLAM, Nav2, Autoware, or MoveIt.**
+**One command to check if your rosbag data is ready — for SLAM, Nav2, Autoware, MoveIt, or perception.**
 
 ```bash
 pip install bagx
@@ -20,7 +20,7 @@ bagx analyzes your rosbag and gives you:
 - **Exact IMU noise values** to paste into your SLAM config
 - **Sync delay warnings** so you know when to enable deskew
 - **"Use LiDAR-only"** when your IMU is too noisy for LIO
-- **Framework-aware checks** for Nav2, Autoware, MoveIt, and RGB-D robot arms
+- **Framework-aware checks** for Nav2, Autoware, MoveIt, RGB-D robot arms, and camera-only perception bags
 - **Manifest-driven benchmark suites** you can rerun across public and private bags
 
 ## The problem
@@ -63,7 +63,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 
 | Command | One-liner |
 |---------|-----------|
-| `bagx eval bag.db3` | Is this bag ready? Auto-detects SLAM / Nav2 / Autoware / MoveIt |
+| `bagx eval bag.db3` | Is this bag ready? Auto-detects SLAM / Nav2 / Autoware / MoveIt / Perception |
 | `bagx compare A.db3 B.db3` | Which sensor config is better? |
 | `bagx sync bag.db3 /imu /lidar` | Are my sensors synchronized? |
 | `bagx anomaly bag.db3` | Where did sensor quality drop? |
@@ -114,6 +114,13 @@ MoveIt topics detected
   ✔ Joint trajectory controller activity recorded on /panda_arm_controller/follow_joint_trajectory/_action/status
   ✔ Pipeline joint_states → planned_path: 6ms median, 6ms P95 (1 sample)
   ✔ Pipeline planned_path → arm execution: 5ms median, 5ms P95 (1 sample)
+
+$ bagx eval r2b_galileo2
+Perception topics detected
+  ✔ RGB image (/camera/color/image_raw) at 15Hz — good for camera-based perception
+  ✔ Depth image (/camera/realsense_splitter_node/output/depth) at 30Hz — good for RGB-D perception
+  ✔ Infra stereo streams are both recorded — depth debugging is possible
+  ✔ Camera calibration topics are recorded — exported perception data is reusable
 ```
 
 ## Dogfooding
@@ -131,6 +138,7 @@ Recent dogfood runs:
 - `autoware_isuzu_all_sensors_bag4`: real bag, `Overall 72.2/100`, plus a sensing-only note when planning/control topics are absent
 - `driving_20_kmh_2022_06_10-16_01_55_compressed`: official Autoware open-data bag, `Overall 99.0/100`, LiDAR packet sync and `/vehicle/status/velocity_status` captured
 - `r2b_robotarm`: official NVIDIA open-data MCAP, `Overall 96.0/100`, RGB-D + joint-state manipulation perception checks
+- `r2b_galileo2`: official NVIDIA open-data MCAP, `Overall 95.3/100`, camera-only RGB-D perception checks without SLAM-specific false advice
 
 ## Benchmark suites
 
@@ -141,6 +149,14 @@ The repository includes [benchmarks/open_data_suite.json](/workspace/ai_coding_w
 - Autoware official `all-sensors-bag4`
 - Autoware official `driving_20_kmh_2022_06_10-16_01_55_compressed`
 - NVIDIA official `r2b_robotarm`
+- NVIDIA official `r2b_galileo2`
+
+It also includes [benchmarks/non_slam_suite.json](/workspace/ai_coding_ws/bagx/benchmarks/non_slam_suite.json), which focuses on non-SLAM value:
+
+- NVIDIA official `r2b_galileo2` camera-only perception
+- NVIDIA official `r2b_robotarm` manipulation perception
+- Local Nav2 dogfood bags under `.cache/dogfood/`
+- Local MoveIt dogfood bags under `.cache/dogfood/`
 
 Typical usage:
 
@@ -148,6 +164,7 @@ Typical usage:
 export BAGX_REALBAGS=/tmp/bagx_realbags
 bagx benchmark benchmarks/open_data_suite.json
 bagx benchmark benchmarks/open_data_suite.json --json benchmark-report.json
+bagx benchmark benchmarks/non_slam_suite.json
 ```
 
 JSON outputs now include `schema_version`, `report_type`, and `bagx_version`, so they are easier to gate in CI and compare across releases.

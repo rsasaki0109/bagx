@@ -9,6 +9,7 @@ This is useful when you want public rosbag datasets and internal gold bags to ac
 ```bash
 # Run all cases in a suite
 bagx benchmark benchmarks/open_data_suite.json
+bagx benchmark benchmarks/non_slam_suite.json
 
 # Export a machine-readable report
 bagx benchmark benchmarks/open_data_suite.json --json benchmark-report.json
@@ -29,23 +30,27 @@ The manifest is JSON and supports environment-variable expansion in `bag_path`.
   "suite_name": "open-data-dogfood",
   "cases": [
     {
-      "name": "nvidia-r2b-robotarm",
-      "bag_path": "${BAGX_REALBAGS}/r2b_robotarm",
+      "name": "nvidia-r2b-galileo2",
+      "bag_path": "${BAGX_REALBAGS}/r2b_galileo2",
       "report_type": "eval",
       "expect": {
         "min_overall_score": 90,
-        "required_domains": ["RobotArm"],
+        "required_domains": ["Perception"],
         "required_recommendations": [
-          "Robot arm perception/manipulation topics detected"
+          "Perception topics detected",
+          "Camera calibration topics are recorded"
         ],
-        "min_topic_rates": {
-          "/joint_states": 100
-        }
+        "forbidden_recommendations": ["No GNSS data", "No IMU data"]
       }
     }
   ]
 }
 ```
+
+The repository ships two ready-made suites:
+
+- `benchmarks/open_data_suite.json`: public Autoware + NVIDIA bags
+- `benchmarks/non_slam_suite.json`: perception/manipulation plus optional local Nav2 / MoveIt dogfood bags
 
 ## Supported expectations
 

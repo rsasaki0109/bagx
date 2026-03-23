@@ -695,6 +695,83 @@ def robotarm_bag(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def perception_bag(tmp_path: Path) -> Path:
+    """Create a camera-only RGB-D perception bag without SLAM/manipulation topics."""
+    topics = [
+        {"name": "/camera/color/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/color/image_raw", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera/depth/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/infra1/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/infra2/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/realsense_splitter_node/output/depth", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera/realsense_splitter_node/output/infra1", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera/realsense_splitter_node/output/infra2", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/tf_static", "type": "tf2_msgs/msg/TFMessage", "format": "cdr"},
+    ]
+    messages = []
+    base_ns = 1_700_000_195_000_000_000
+
+    for i in range(45):
+        color_ts = base_ns + i * 66_666_666  # ~15Hz
+        messages.append({
+            "topic": "/camera/color/image_raw",
+            "timestamp_ns": color_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera/color/camera_info",
+            "timestamp_ns": color_ts,
+            "data": build_stub_cdr(),
+        })
+
+    for i in range(90):
+        depth_ts = base_ns + i * 33_333_333 + 8_000_000  # ~30Hz with offset from RGB
+        messages.append({
+            "topic": "/camera/realsense_splitter_node/output/depth",
+            "timestamp_ns": depth_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera/depth/camera_info",
+            "timestamp_ns": depth_ts,
+            "data": build_stub_cdr(),
+        })
+
+    for i in range(90):
+        infra1_ts = base_ns + i * 33_333_333 + 12_000_000
+        infra2_ts = base_ns + i * 33_333_333 + 13_000_000
+        messages.append({
+            "topic": "/camera/realsense_splitter_node/output/infra1",
+            "timestamp_ns": infra1_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera/infra1/camera_info",
+            "timestamp_ns": infra1_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera/realsense_splitter_node/output/infra2",
+            "timestamp_ns": infra2_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera/infra2/camera_info",
+            "timestamp_ns": infra2_ts,
+            "data": build_stub_cdr(),
+        })
+
+    messages.append({
+        "topic": "/tf_static",
+        "timestamp_ns": base_ns,
+        "data": build_stub_cdr(),
+    })
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(tmp_path / "perception.db3", topics, messages)
+
+
+@pytest.fixture
 def moveit_bag(tmp_path: Path) -> Path:
     """Create a MoveIt-style bag with namespaced joint_states, planning, and execution topics."""
     topics = [

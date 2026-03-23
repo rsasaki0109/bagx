@@ -85,6 +85,31 @@ class TestBenchmarkSuite:
         assert report.total_cases == 1
         assert report.cases[0].name == "keep"
 
+    def test_run_benchmark_suite_with_perception_domain(self, tmp_path: Path, perception_bag: Path):
+        manifest_path = _write_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "perception-pass",
+                    "bag_path": str(perception_bag),
+                    "expect": {
+                        "required_domains": ["Perception"],
+                        "required_recommendations": [
+                            "Perception topics detected",
+                            "Camera calibration topics are recorded",
+                        ],
+                        "forbidden_recommendations": ["No GNSS data", "No IMU data"],
+                        "min_domain_score": 90,
+                    },
+                }
+            ],
+        )
+
+        report = run_benchmark_suite(str(manifest_path))
+
+        assert report.passed_cases == 1
+        assert report.cases[0].detected_domains == ["Perception"]
+
 
 class TestBenchmarkCli:
     def test_benchmark_cli_json_output(self, tmp_path: Path, nav2_bag: Path):

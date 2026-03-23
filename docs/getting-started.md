@@ -42,6 +42,7 @@ bagx eval your_bag.db3 --json report.json
 
 # Run a benchmark suite
 bagx benchmark benchmarks/open_data_suite.json
+bagx benchmark benchmarks/non_slam_suite.json
 ```
 
 ## CLI options
