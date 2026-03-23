@@ -650,6 +650,12 @@ def generate_recommendations(report: EvalReport) -> list[str]:
     """Generate actionable recommendations based on eval results."""
     recs: list[str] = []
 
+    # Detect non-SLAM domains first to suppress irrelevant SLAM advice
+    domain_recs = _detect_domain_recommendations(report)
+    is_non_slam_domain = any(
+        "Nav2" in r or "Autoware" in r or "MoveIt" in r for r in domain_recs
+    )
+
     # --- GNSS ---
     if report.gnss:
         g = report.gnss
@@ -670,7 +676,7 @@ def generate_recommendations(report: EvalReport) -> list[str]:
             recs.append(
                 f"[yellow]:warning:[/yellow] HDOP {g.hdop_mean:.1f} is high — GNSS position accuracy is degraded"
             )
-    else:
+    elif not is_non_slam_domain:
         recs.append(
             "[dim]:information_source:[/dim] No GNSS data — ground truth will need an external source (motion capture, total station, etc.)"
         )
@@ -722,7 +728,7 @@ def generate_recommendations(report: EvalReport) -> list[str]:
             recs.append(
                 f"[dim]:information_source:[/dim] {m.noise_note}"
             )
-    else:
+    elif not is_non_slam_domain:
         recs.append(
             "[dim]:information_source:[/dim] No IMU data — LiDAR-only odometry (KISS-ICP) recommended"
         )
