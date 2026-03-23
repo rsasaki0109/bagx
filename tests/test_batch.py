@@ -6,8 +6,9 @@ import csv
 import json
 from pathlib import Path
 
+from rich.console import Console
 
-from bagx.batch import batch_anomaly, batch_eval, resolve_bag_paths
+from bagx.batch import batch_anomaly, batch_eval, print_batch_eval_table, resolve_bag_paths
 from tests.conftest import (
     _create_db3,
     build_navsatfix_cdr,
@@ -89,6 +90,11 @@ class TestResolveBagPaths:
         result = resolve_bag_paths([str(bag)])
         assert len(result) == 1
 
+    def test_resolve_mixed_inputs_deduplicates_matches(self, tmp_path: Path):
+        bag = _make_gnss_bag(tmp_path / "mixed.db3")
+        result = resolve_bag_paths([str(tmp_path), str(bag), str(tmp_path / "*.db3")])
+        assert result == [bag.resolve()]
+
 
 class TestBatchEval:
     def test_batch_eval_multiple_bags(self, tmp_path: Path):
@@ -151,6 +157,44 @@ class TestBatchEval:
         imu_report = next(r for r in reports if r.imu is not None)
         assert gnss_report.gnss.fix_rate > 0
         assert imu_report.imu.total_messages > 0
+
+    def test_print_batch_eval_table_empty(self):
+        console = Console(record=True, width=120)
+        print_batch_eval_table([], console)
+        output = console.export_text()
+        assert "No bags found to evaluate." in output
+
+    def test_print_batch_eval_table_reports_best_and_worst(self, tmp_path: Path):
+        bag1 = _make_gnss_bag(tmp_path / "a.db3", n_messages=20)
+
+        topics = [{"name": "/gnss", "type": "sensor_msgs/msg/NavSatFix", "format": "cdr"}]
+        messages = []
+        base_ns = 1_700_000_000_000_000_000
+        for i in range(20):
+            ts = base_ns + i * 100_000_000
+            messages.append({
+                "topic": "/gnss",
+                "timestamp_ns": ts,
+                "data": build_navsatfix_cdr(
+                    stamp_sec=ts // 1_000_000_000,
+                    stamp_nanosec=ts % 1_000_000_000,
+                    status=-1,
+                    latitude=35.6812,
+                    longitude=139.7671,
+                    altitude=40.0,
+                ),
+            })
+        bag2 = _create_db3(tmp_path / "b.db3", topics, messages)
+
+        reports = batch_eval([str(bag1), str(bag2)])
+
+        console = Console(record=True, width=160)
+        print_batch_eval_table(reports, console)
+        output = console.export_text()
+
+        assert "Batch Evaluation Summary" in output
+        assert "Best:" in output
+        assert "Worst:" in output
 
 
 class TestBatchAnomaly:
