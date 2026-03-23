@@ -38,11 +38,15 @@ def main_callback(
     ),
 ) -> None:
     """Post-processing analysis engine for ROS2 rosbag data."""
+    import os
+
     level = logging.WARNING
     if verbose:
         level = logging.DEBUG
     elif quiet:
         level = logging.ERROR
+        # Suppress ROS2 internal rcutils logging (not controlled by Python logging)
+        os.environ.setdefault("RCUTILS_LOGGING_MIN_SEVERITY", "ERROR")
     logging.basicConfig(format="%(levelname)s: %(message)s", level=level)
 
 
@@ -395,6 +399,9 @@ def info(
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error reading bag: {e}[/red]")
         raise typer.Exit(1)
 
 
