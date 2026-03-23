@@ -7,6 +7,7 @@ unknown types, and other boundary conditions.
 from __future__ import annotations
 
 import struct
+import warnings
 from pathlib import Path
 
 
@@ -283,7 +284,9 @@ class TestEvalEdgeCases:
 
     def test_two_imu_messages(self, tmp_path: Path):
         bag = _two_message_imu_bag(tmp_path)
-        report = evaluate_bag(str(bag))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("error", RuntimeWarning)
+            report = evaluate_bag(str(bag))
 
         assert report.imu is not None
         assert report.imu.total_messages == 2
@@ -293,6 +296,7 @@ class TestEvalEdgeCases:
         import math
         assert math.isnan(report.imu.accel_bias_stability)
         assert math.isnan(report.imu.gyro_bias_stability)
+        assert caught == []
 
     def test_no_topics_bag_eval(self, tmp_path: Path):
         bag = _no_topics_bag(tmp_path)

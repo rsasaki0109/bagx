@@ -1,5 +1,7 @@
 """Tests for bagx.reader module."""
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -90,3 +92,26 @@ class TestBagReader:
         s1 = reader.summary()
         s2 = reader.summary()
         assert s1 is s2  # Same object (cached)
+
+    def test_compressed_db3_directory_falls_back_to_sqlite(self, gnss_bag: Path, tmp_path: Path):
+        if shutil.which("zstd") is None:
+            pytest.skip("zstd command not available")
+
+        bag_dir = tmp_path / "compressed_bag"
+        bag_dir.mkdir()
+        compressed_path = bag_dir / "gnss_0.db3.zstd"
+        subprocess.run(
+            ["zstd", "-f", str(gnss_bag), "-o", str(compressed_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        reader = BagReader(bag_dir)
+        summary = reader.summary()
+        messages = list(reader.read_messages())
+
+        assert summary.message_count == 100
+        assert "/gnss" in summary.topics
+        assert len(messages) == 100
+        assert messages[0].topic == "/gnss"

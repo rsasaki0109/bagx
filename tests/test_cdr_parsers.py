@@ -11,10 +11,20 @@ from bagx.reader import (
     _parse_header,
     _parse_imu,
     _parse_navsatfix,
+    _parse_odometry,
     _parse_pointcloud2_meta,
+    _parse_pose_with_covariance_stamped,
     _parse_pose_stamped,
+    _parse_tf_message,
+    _parse_twist_stamped,
 )
 from helpers import payload_align
+from tests.conftest import (
+    build_odometry_cdr,
+    build_pose_with_covariance_stamped_cdr,
+    build_tf_message_cdr,
+    build_twist_stamped_cdr,
+)
 
 
 def _build_pose_stamped_cdr(
@@ -210,6 +220,112 @@ class TestParsePoseStamped:
         assert "w" in result["orientation"]
 
 
+class TestParsePoseWithCovarianceStamped:
+    """Test _parse_pose_with_covariance_stamped."""
+
+    def test_valid_pose_with_covariance(self):
+        data = build_pose_with_covariance_stamped_cdr(
+            stamp_sec=100,
+            stamp_nanosec=500,
+            position=(1.0, 2.0, 3.0),
+            orientation=(0.0, 0.0, 0.707, 0.707),
+        )
+        result = _parse_pose_with_covariance_stamped(data)
+
+        assert result["stamp_sec"] == 100
+        assert result["pose"]["pose"]["position"]["x"] == pytest.approx(1.0)
+        assert result["pose"]["pose"]["orientation"]["w"] == pytest.approx(0.707)
+        assert len(result["pose"]["covariance"]) == 36
+
+    def test_field_names_for_scene(self):
+        data = build_pose_with_covariance_stamped_cdr(
+            stamp_sec=100,
+            stamp_nanosec=0,
+            position=(1.0, 2.0, 3.0),
+            orientation=(0.0, 0.0, 0.0, 1.0),
+        )
+        result = _parse_pose_with_covariance_stamped(data)
+
+        assert "pose" in result
+        assert "pose" in result["pose"]
+        assert "position" in result["pose"]["pose"]
+        assert "orientation" in result["pose"]["pose"]
+
+
+class TestParseTwistStamped:
+    """Test _parse_twist_stamped."""
+
+    def test_valid_twist(self):
+        data = build_twist_stamped_cdr(
+            stamp_sec=200,
+            stamp_nanosec=0,
+            linear=(1.0, 2.0, 3.0),
+            angular=(0.1, 0.2, 0.3),
+        )
+        result = _parse_twist_stamped(data)
+
+        assert result["stamp_sec"] == 200
+        assert result["twist"]["linear"]["x"] == pytest.approx(1.0)
+        assert result["twist"]["angular"]["z"] == pytest.approx(0.3)
+
+
+class TestParseOdometry:
+    """Test _parse_odometry."""
+
+    def test_valid_odometry(self):
+        data = build_odometry_cdr(
+            stamp_sec=300,
+            stamp_nanosec=123,
+            position=(1.0, 2.0, 3.0),
+            orientation=(0.0, 0.0, 0.707, 0.707),
+            linear=(0.5, 0.0, 0.0),
+            angular=(0.0, 0.0, 0.1),
+        )
+        result = _parse_odometry(data)
+
+        assert result["stamp_sec"] == 300
+        assert result["child_frame_id"] == "base_link"
+        assert result["pose"]["pose"]["position"]["y"] == pytest.approx(2.0)
+        assert result["twist"]["twist"]["linear"]["x"] == pytest.approx(0.5)
+        assert result["twist"]["twist"]["angular"]["z"] == pytest.approx(0.1)
+
+    def test_field_names_for_scene(self):
+        data = build_odometry_cdr(
+            stamp_sec=300,
+            stamp_nanosec=0,
+            position=(1.0, 2.0, 3.0),
+            orientation=(0.0, 0.0, 0.0, 1.0),
+            linear=(0.5, 0.0, 0.0),
+            angular=(0.0, 0.0, 0.1),
+        )
+        result = _parse_odometry(data)
+
+        assert "pose" in result
+        assert "twist" in result
+        assert "pose" in result["pose"]
+        assert "twist" in result["twist"]
+
+
+class TestParseTfMessage:
+    """Test _parse_tf_message."""
+
+    def test_valid_tf_message(self):
+        data = build_tf_message_cdr(
+            stamp_sec=400,
+            stamp_nanosec=0,
+            translation=(1.0, 2.0, 3.0),
+            rotation=(0.0, 0.0, 0.0, 1.0),
+        )
+        result = _parse_tf_message(data)
+
+        assert len(result["transforms"]) == 1
+        transform = result["transforms"][0]
+        assert transform["frame_id"] == "map"
+        assert transform["child_frame_id"] == "base_link"
+        assert transform["transform"]["translation"]["x"] == pytest.approx(1.0)
+        assert transform["transform"]["rotation"]["w"] == pytest.approx(1.0)
+
+
 class TestParsePointCloud2:
     """Test _parse_pointcloud2_meta."""
 
@@ -256,3 +372,17 @@ class TestParseCdrBasicDispatch:
         result = _parse_cdr_basic(data, "sensor_msgs/msg/NavSatFix")
         assert "latitude" in result
         assert result["latitude"] == pytest.approx(1.0)
+
+    def test_odometry_dispatches(self):
+        data = build_odometry_cdr(
+            stamp_sec=100,
+            stamp_nanosec=0,
+            position=(1.0, 2.0, 3.0),
+            orientation=(0.0, 0.0, 0.0, 1.0),
+            linear=(0.5, 0.0, 0.0),
+            angular=(0.0, 0.0, 0.1),
+        )
+        result = _parse_cdr_basic(data, "nav_msgs/msg/Odometry")
+
+        assert "pose" in result
+        assert result["pose"]["pose"]["position"]["x"] == pytest.approx(1.0)

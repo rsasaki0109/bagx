@@ -150,6 +150,102 @@ class TestRateAnomalies:
         rate_gaps = [a for a in report.anomalies if a.type == "rate_gap"]
         assert len(rate_gaps) == 0
 
+    def test_long_bag_startup_gap_is_ignored(self, tmp_path: Path):
+        """Startup transients in long bags should not be reported as rate gaps."""
+        from tests.conftest import _create_db3, build_stub_cdr
+
+        topics = [{"name": "/odom", "type": "nav_msgs/msg/Odometry", "format": "cdr"}]
+        messages = []
+        base_ns = 1_700_000_000_000_000_000
+
+        messages.append({"topic": "/odom", "timestamp_ns": base_ns, "data": build_stub_cdr()})
+        messages.append({"topic": "/odom", "timestamp_ns": base_ns + 400_000_000, "data": build_stub_cdr()})
+
+        start_ns = base_ns + 500_000_000
+        for i in range(180):
+            ts = start_ns + i * 100_000_000
+            messages.append({"topic": "/odom", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+        bag_path = tmp_path / "startup_gap_long.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_anomalies(str(bag_path))
+        rate_gaps = [a for a in report.anomalies if a.type == "rate_gap"]
+        assert rate_gaps == []
+
+    def test_late_gap_still_detected_after_warmup(self, tmp_path: Path):
+        """Warmup suppression should not hide later runtime gaps."""
+        from tests.conftest import _create_db3, build_stub_cdr
+
+        topics = [{"name": "/odom", "type": "nav_msgs/msg/Odometry", "format": "cdr"}]
+        messages = []
+        base_ns = 1_700_000_000_000_000_000
+
+        for i in range(70):
+            ts = base_ns + i * 100_000_000
+            messages.append({"topic": "/odom", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+        gap_base_ns = base_ns + 70 * 100_000_000 + 600_000_000
+        for i in range(60):
+            ts = gap_base_ns + i * 100_000_000
+            messages.append({"topic": "/odom", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+        bag_path = tmp_path / "late_gap_long.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_anomalies(str(bag_path))
+        rate_gaps = [a for a in report.anomalies if a.type == "rate_gap"]
+        assert len(rate_gaps) >= 1
+
+    def test_clock_topic_is_excluded_from_generic_rate_anomalies(self, tmp_path: Path):
+        """Meta timing topics should not dominate anomaly reports."""
+        from tests.conftest import _create_db3, build_stub_cdr
+
+        topics = [{"name": "/clock", "type": "rosgraph_msgs/msg/Clock", "format": "cdr"}]
+        messages = []
+        base_ns = 1_700_000_000_000_000_000
+
+        for i in range(50):
+            ts = base_ns + i * 10_000_000
+            messages.append({"topic": "/clock", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+        gap_base_ns = base_ns + 50 * 10_000_000 + 500_000_000
+        for i in range(50):
+            ts = gap_base_ns + i * 10_000_000
+            messages.append({"topic": "/clock", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+        bag_path = tmp_path / "clock_gap.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_anomalies(str(bag_path))
+        rate_gaps = [a for a in report.anomalies if a.type == "rate_gap"]
+        assert rate_gaps == []
+
+    def test_planning_scene_topic_is_excluded_from_generic_rate_anomalies(self, tmp_path: Path):
+        """Internal planning scene updates should not be treated as sensor rate faults."""
+        from tests.conftest import _create_db3, build_stub_cdr
+
+        topics = [{"name": "/monitored_planning_scene", "type": "moveit_msgs/msg/PlanningScene", "format": "cdr"}]
+        messages = []
+        base_ns = 1_700_000_000_000_000_000
+
+        regular_offsets = [0, 250_000_000, 500_000_000, 750_000_000, 1_000_000_000]
+        for cycle in range(3):
+            cycle_base = base_ns + cycle * 3_000_000_000
+            for offset in regular_offsets:
+                messages.append({
+                    "topic": "/monitored_planning_scene",
+                    "timestamp_ns": cycle_base + offset,
+                    "data": build_stub_cdr(),
+                })
+
+        bag_path = tmp_path / "planning_scene_gap.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_anomalies(str(bag_path))
+        rate_gaps = [a for a in report.anomalies if a.type == "rate_gap"]
+        assert rate_gaps == []
+
 
 class TestAnomalyReport:
     def test_report_structure(self, gnss_bag: Path):

@@ -50,6 +50,24 @@ class TestCliEval:
         result = runner.invoke(app, ["eval", "/nonexistent.db3"])
         assert result.exit_code == 1
 
+    def test_eval_nav2_domain_output(self, nav2_bag: Path):
+        result = runner.invoke(app, ["eval", str(nav2_bag)])
+        assert result.exit_code == 0
+        assert "Nav2 topics detected" in result.output
+        assert "/robot/odom" in result.output
+
+    def test_eval_autoware_domain_output(self, autoware_bag: Path):
+        result = runner.invoke(app, ["eval", str(autoware_bag)])
+        assert result.exit_code == 0
+        assert "Autoware topics detected" in result.output
+        assert "/sensing/lidar/top/pointcloud_raw_ex" in result.output
+
+    def test_eval_moveit_domain_output(self, moveit_bag: Path):
+        result = runner.invoke(app, ["eval", str(moveit_bag)])
+        assert result.exit_code == 0
+        assert "MoveIt topics detected" in result.output
+        assert "/fr3/joint_states" in result.output
+
 
 class TestCliCompare:
     def test_compare(self, gnss_bag: Path, gnss_bag_degraded: Path):

@@ -16,8 +16,13 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader, Message
+from bagx.topic_filters import is_rate_anomaly_candidate
 
 logger = logging.getLogger(__name__)
+
+
+RATE_ANOMALY_WARMUP_MIN_DURATION_SEC = 15.0
+RATE_ANOMALY_WARMUP_SEC = 5.0
 
 
 @dataclass
@@ -64,6 +69,7 @@ def detect_anomalies(
     """
     reader = BagReader(bag_path)
     summary = reader.summary()
+    warmup_cutoff_ns = _rate_anomaly_warmup_cutoff_ns(summary.start_time_ns, summary.duration_sec)
 
     # Classify topics
     gnss_topics: list[str] = []
@@ -100,13 +106,19 @@ def detect_anomalies(
 
     # IMU anomalies
     for topic, messages in imu_messages.items():
-        anomalies.extend(_detect_imu_anomalies(topic, messages))
+        anomalies.extend(_detect_imu_anomalies(topic, messages, warmup_cutoff_ns=warmup_cutoff_ns))
 
     # General rate anomalies (skip GNSS/IMU topics — already covered above)
     specialized_topics = set(gnss_topics) | set(imu_topics)
     for topic, timestamps in topic_timestamps.items():
-        if topic not in specialized_topics:
-            anomalies.extend(_detect_rate_anomalies(topic, timestamps))
+        if topic not in specialized_topics and is_rate_anomaly_candidate(topic, summary.topics[topic].type):
+            anomalies.extend(
+                _detect_rate_anomalies(
+                    topic,
+                    timestamps,
+                    warmup_cutoff_ns=warmup_cutoff_ns,
+                )
+            )
 
     # Sort by timestamp
     anomalies.sort(key=lambda a: a.timestamp_ns)
@@ -205,7 +217,10 @@ def _detect_gnss_anomalies(
 
 
 def _detect_imu_anomalies(
-    topic: str, messages: list[Message]
+    topic: str,
+    messages: list[Message],
+    *,
+    warmup_cutoff_ns: int | None = None,
 ) -> list[AnomalyEvent]:
     """Detect IMU anomalies: acceleration spikes, gyro rate spikes, frequency drops."""
     anomalies: list[AnomalyEvent] = []
@@ -278,6 +293,8 @@ def _detect_imu_anomalies(
         if median_interval > 100_000:  # 100µs in ns
             gap_threshold = 3 * median_interval
             for i, interval in enumerate(intervals):
+                if warmup_cutoff_ns is not None and int(ts_arr[i + 1]) <= warmup_cutoff_ns:
+                    continue
                 if interval > gap_threshold and interval > min_gap_ns:
                     anomalies.append(AnomalyEvent(
                         timestamp_ns=int(ts_arr[i + 1]),
@@ -291,12 +308,15 @@ def _detect_imu_anomalies(
 
 
 def _detect_rate_anomalies(
-    topic: str, timestamps: list[int]
+    topic: str,
+    timestamps: list[int],
+    *,
+    warmup_cutoff_ns: int | None = None,
 ) -> list[AnomalyEvent]:
     """Detect message rate anomalies: gaps > 3x median interval."""
     anomalies: list[AnomalyEvent] = []
 
-    if len(timestamps) < 3:
+    if len(timestamps) < 10:
         return anomalies
 
     ts_arr = np.array(sorted(timestamps), dtype=np.int64)
@@ -311,6 +331,8 @@ def _detect_rate_anomalies(
     # Minimum absolute gap of 50ms to avoid noise on high-rate topics
     min_gap_ns = 50_000_000  # 50ms
     for i, interval in enumerate(intervals):
+        if warmup_cutoff_ns is not None and int(ts_arr[i + 1]) <= warmup_cutoff_ns:
+            continue
         if interval > gap_threshold and interval > min_gap_ns:
             anomalies.append(AnomalyEvent(
                 timestamp_ns=int(ts_arr[i + 1]),
@@ -321,6 +343,13 @@ def _detect_rate_anomalies(
             ))
 
     return anomalies
+
+
+def _rate_anomaly_warmup_cutoff_ns(start_time_ns: int, duration_sec: float) -> int | None:
+    """Ignore startup transients for long recordings only."""
+    if duration_sec < RATE_ANOMALY_WARMUP_MIN_DURATION_SEC:
+        return None
+    return start_time_ns + int(RATE_ANOMALY_WARMUP_SEC * 1e9)
 
 
 def print_anomaly_report(report: AnomalyReport, console: Console | None = None) -> None:

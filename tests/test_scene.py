@@ -30,6 +30,18 @@ class TestAutoDetection:
         total_from_sources = sum(report.sources.values())
         assert len(report.states) == total_from_sources
 
+    def test_detects_odometry_topic(self, nav2_bag: Path):
+        report = extract_scene(str(nav2_bag))
+        assert "/robot/odom" in report.sources
+
+    def test_detects_pose_with_covariance_topic(self, nav2_bag: Path):
+        report = extract_scene(str(nav2_bag))
+        assert "/robot/amcl_pose" in report.sources
+
+    def test_detects_tf_topic(self, tf_bag: Path):
+        report = extract_scene(str(tf_bag))
+        assert "/tf" in report.sources
+
 
 class TestGnssStates:
     """Test SceneState fields from GNSS (NavSatFix)."""
@@ -132,6 +144,39 @@ class TestMultiBag:
         report = extract_scene(str(multi_bag))
         assert report.sources["/gnss"] == 50
         assert report.sources["/imu"] == 500
+
+
+class TestFrameworkStates:
+    """Test scene extraction on Nav2/TF-style messages."""
+
+    def test_odometry_has_position_and_velocity(self, nav2_bag: Path):
+        report = extract_scene(str(nav2_bag), topics=["/robot/odom"])
+        states = [s for s in report.states if s.source_topic == "/robot/odom"]
+
+        assert len(states) > 0
+        state = states[0]
+        assert state.position is not None
+        assert state.orientation is not None
+        assert state.linear_velocity is not None
+        assert state.angular_velocity is not None
+
+    def test_pose_with_covariance_has_pose(self, nav2_bag: Path):
+        report = extract_scene(str(nav2_bag), topics=["/robot/amcl_pose"])
+        states = [s for s in report.states if s.source_topic == "/robot/amcl_pose"]
+
+        assert len(states) > 0
+        state = states[0]
+        assert state.position is not None
+        assert state.orientation is not None
+
+    def test_tf_message_has_transform_pose(self, tf_bag: Path):
+        report = extract_scene(str(tf_bag))
+        states = [s for s in report.states if s.source_topic == "/tf"]
+
+        assert len(states) > 0
+        state = states[0]
+        assert state.position is not None
+        assert state.orientation is not None
 
 
 class TestTopicFiltering:

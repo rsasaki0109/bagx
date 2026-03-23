@@ -25,3 +25,4 @@ env/
 *.parquet
 export/
 site/
+.cache/

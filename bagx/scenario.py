@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader
+from bagx.topic_filters import is_sync_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ def detect_scenarios(
         "/tf_static", "/clicked_point", "/initialpose", "/move_base_simple/goal",
     }
     for topic, timestamps in topic_timestamps.items():
-        if topic in _DROPOUT_SKIP:
+        if topic in _DROPOUT_SKIP or "_action/" in topic or len(timestamps) < 10:
             continue
         scenarios.extend(_detect_sensor_dropout(topic, timestamps, dropout_threshold_sec))
 
@@ -150,6 +151,7 @@ def detect_scenarios(
         t for t in all_topics
         if len(topic_timestamps.get(t, [])) > 10
         and t not in _META_TOPIC_PATTERNS
+        and is_sync_candidate(t, summary.topics[t].type)
     ]
     if len(active_topics) >= 2:
         scenarios.extend(
@@ -237,10 +239,12 @@ def _detect_sensor_dropout(
 
     threshold_ns = int(threshold_sec * 1e9)
     ts_sorted = sorted(timestamps)
+    median_interval_ns = int(np.median(np.diff(ts_sorted))) if len(ts_sorted) >= 3 else 0
+    effective_threshold_ns = max(threshold_ns, median_interval_ns * 3) if median_interval_ns > 0 else threshold_ns
 
     for i in range(1, len(ts_sorted)):
         gap_ns = ts_sorted[i] - ts_sorted[i - 1]
-        if gap_ns >= threshold_ns:
+        if gap_ns >= effective_threshold_ns:
             scenarios.append(Scenario(
                 start_time_ns=ts_sorted[i - 1],
                 end_time_ns=ts_sorted[i],
@@ -337,15 +341,27 @@ def _detect_sync_degraded(
         if len(ts1) < 2 or len(ts2) < 2:
             continue
 
+        overlap_start = max(int(ts1[0]), int(ts2[0]))
+        overlap_end = min(int(ts1[-1]), int(ts2[-1]))
+        if overlap_end <= overlap_start:
+            continue
+
+        ts1 = ts1[(ts1 >= overlap_start) & (ts1 <= overlap_end)]
+        ts2 = ts2[(ts2 >= overlap_start) & (ts2 <= overlap_end)]
+        if len(ts1) < 5 or len(ts2) < 5:
+            continue
+
         # For each message in t1, find nearest in t2 and compute delay
         delays: list[tuple[int, float]] = []  # (timestamp_ns, delay_ms)
-        j = 0
         for t in ts1:
-            while j < len(ts2) - 1 and abs(ts2[j + 1] - t) < abs(ts2[j] - t):
-                j += 1
-            if j < len(ts2):
-                delay_ms = abs(int(ts2[j] - t)) / 1e6
-                delays.append((int(t), delay_ms))
+            idx = int(np.searchsorted(ts2, t))
+            candidates: list[int] = []
+            if idx < len(ts2):
+                candidates.append(abs(int(ts2[idx] - t)))
+            if idx > 0:
+                candidates.append(abs(int(ts2[idx - 1] - t)))
+            if candidates:
+                delays.append((int(t), min(candidates) / 1e6))
 
         # Find sustained periods above threshold
         degraded_start: int | None = None

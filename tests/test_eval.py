@@ -107,6 +107,69 @@ class TestEvalReport:
         assert data["gnss"]["fix_rate"] == pytest.approx(0.9, abs=0.01)
 
 
+class TestFrameworkDetection:
+    """Test domain-specific recommendations for supported frameworks."""
+
+    def test_nav2_sync_excludes_control_topics(self, nav2_bag: Path):
+        report = evaluate_bag(str(nav2_bag))
+        if report.sync is None:
+            return
+
+        sync_pairs = {topic for pair in report.sync.topic_pairs for topic in pair}
+        assert "/controller_server/cmd_vel" not in sync_pairs
+        assert "/local_costmap/costmap" not in sync_pairs
+
+    def test_nav2_namespaced_topics_detected(self, nav2_bag: Path):
+        report = evaluate_bag(str(nav2_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Nav2 topics detected" in recommendations
+        assert "Odometry (/robot/odom) at 50Hz" in recommendations
+        assert "LaserScan (/robot/scan) at 12Hz" in recommendations
+        assert "Global plan (/plan) recorded 4 times" in recommendations
+        assert "NavigateToPose status (/navigate_to_pose/_action/status) recorded" in recommendations
+        assert "scan → costmap" in recommendations
+        assert "plan → cmd_vel onset" in recommendations
+
+    def test_autoware_topics_detected(self, autoware_bag: Path):
+        report = evaluate_bag(str(autoware_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Autoware topics detected" in recommendations
+        assert "LiDAR (/sensing/lidar/top/pointcloud_raw_ex) at 10Hz" in recommendations
+        assert "Camera (/sensing/camera/front/image_raw/compressed) at 30Hz" in recommendations
+        assert "GNSS (/sensing/gnss/ublox/nav_sat_fix)" in recommendations
+        assert "Control command (/control/command/control_cmd) at 10Hz" in recommendations
+        assert "sensing → perception" in recommendations
+        assert "end-to-end (sensing → control): 110ms median" in recommendations
+
+    def test_autoware_sensing_only_bag_skips_planning_checks(self, autoware_sensing_only_bag: Path):
+        report = evaluate_bag(str(autoware_sensing_only_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Autoware topics detected" in recommendations
+        assert "Sensing/localization-only Autoware bag" in recommendations
+
+    def test_moveit_topics_detected(self, moveit_bag: Path):
+        report = evaluate_bag(str(moveit_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "MoveIt topics detected" in recommendations
+        assert "JointState (/fr3/joint_states) at 200Hz" in recommendations
+        assert "MoveGroup action activity recorded on /move_action/_action/status" in recommendations
+        assert "Joint trajectory controller activity recorded on /panda_arm_controller/follow_joint_trajectory/_action/status" in recommendations
+        assert "joint_states → planned_path" in recommendations
+        assert "planned_path → arm execution" in recommendations
+
+    def test_moveit_sparse_planned_path_still_reports_pipeline(self, moveit_sparse_bag: Path):
+        report = evaluate_bag(str(moveit_sparse_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "MoveIt topics detected" in recommendations
+        assert "joint_states → planned_path" in recommendations
+        assert "1 sample" in recommendations
+
+
 class TestEvalConfig:
     """Test EvalConfig customization."""
 

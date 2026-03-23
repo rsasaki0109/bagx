@@ -6,9 +6,15 @@ Supports both .db3 (SQLite) and .mcap formats.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import shutil
 import sqlite3
 import struct
+import subprocess
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
@@ -33,6 +39,24 @@ try:
     HAS_MCAP = True
 except ImportError:
     HAS_MCAP = False
+
+
+@contextmanager
+def _maybe_suppress_native_stderr() -> Iterator[None]:
+    """Suppress native stderr noise when requested by the CLI."""
+    if os.environ.get("BAGX_SUPPRESS_NATIVE_STDERR") != "1":
+        yield
+        return
+
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    saved_stderr_fd = os.dup(2)
+    try:
+        os.dup2(devnull_fd, 2)
+        yield
+    finally:
+        os.dup2(saved_stderr_fd, 2)
+        os.close(saved_stderr_fd)
+        os.close(devnull_fd)
 
 
 @dataclass
@@ -102,10 +126,9 @@ class BagReader:
         self._is_mcap = self.path.suffix == ".mcap" or (
             self.path.is_dir() and any(self.path.glob("*.mcap"))
         )
-        self._is_db3 = self.path.suffix == ".db3" or (
-            self.path.is_dir() and any(self.path.glob("*.db3"))
-        )
+        self._is_db3 = self.path.suffix == ".db3"
         self._summary: BagSummary | None = None
+        self._decompressed_db3_paths: list[Path] | None = None
 
     def summary(self) -> BagSummary:
         if self._summary is not None:
@@ -114,8 +137,19 @@ class BagReader:
         if HAS_MCAP and self._is_mcap:
             self._summary = self._summary_mcap()
         elif HAS_ROS:
-            self._summary = self._summary_ros()
-        elif self._is_db3:
+            try:
+                self._summary = self._summary_ros()
+            except Exception as exc:
+                if self._has_sqlite_storage():
+                    logger.info(
+                        "ROS backend failed for %s (%s); falling back to SQLite backend",
+                        self.path,
+                        exc,
+                    )
+                    self._summary = self._summary_sqlite()
+                else:
+                    raise
+        elif self._has_sqlite_storage():
             self._summary = self._summary_sqlite()
         else:
             raise RuntimeError(
@@ -130,8 +164,19 @@ class BagReader:
         if HAS_MCAP and self._is_mcap:
             yield from self._read_mcap(topics)
         elif HAS_ROS:
-            yield from self._read_ros(topics)
-        elif self._is_db3:
+            try:
+                yield from self._read_ros(topics)
+            except Exception as exc:
+                if self._has_sqlite_storage():
+                    logger.info(
+                        "ROS backend failed for %s (%s); falling back to SQLite backend",
+                        self.path,
+                        exc,
+                    )
+                    yield from self._read_sqlite(topics)
+                else:
+                    raise
+        elif self._has_sqlite_storage():
             yield from self._read_sqlite(topics)
         else:
             raise RuntimeError(
@@ -149,7 +194,8 @@ class BagReader:
             input_serialization_format="cdr",
             output_serialization_format="cdr",
         )
-        reader.open(storage_options, converter_options)
+        with _maybe_suppress_native_stderr():
+            reader.open(storage_options, converter_options)
 
         metadata = reader.get_metadata()
         topics = {}
@@ -181,7 +227,8 @@ class BagReader:
             input_serialization_format="cdr",
             output_serialization_format="cdr",
         )
-        reader.open(storage_options, converter_options)
+        with _maybe_suppress_native_stderr():
+            reader.open(storage_options, converter_options)
 
         if topics:
             filter_ = rosbag2_py.StorageFilter(topics=topics)
@@ -371,16 +418,67 @@ class BagReader:
 
     # --- SQLite fallback backend (no ROS required) ---
 
+    def _has_sqlite_storage(self) -> bool:
+        """Return True if the bag is a db3 file or contains db3/db3.zstd files."""
+        if self._is_db3:
+            return True
+        if not self.path.is_dir():
+            return False
+        return any(self.path.glob("*.db3")) or any(self.path.glob("*.db3.zstd"))
+
     def _get_db3_paths(self) -> list[Path]:
         """Return all .db3 files for this bag, sorted by name."""
         if self.path.suffix == ".db3":
             return [self.path]
         db3_files = sorted(self.path.glob("*.db3"))
-        if not db3_files:
-            raise FileNotFoundError(
-                f"No .db3 file found in {self.path}"
+        if db3_files:
+            return db3_files
+
+        compressed_db3_files = sorted(self.path.glob("*.db3.zstd"))
+        if compressed_db3_files:
+            return self._decompress_db3_paths(compressed_db3_files)
+
+        raise FileNotFoundError(
+            f"No .db3 file found in {self.path}"
+        )
+
+    def _decompress_db3_paths(self, compressed_paths: list[Path]) -> list[Path]:
+        """Decompress .db3.zstd files into a reusable temp cache."""
+        if self._decompressed_db3_paths is not None:
+            return self._decompressed_db3_paths
+
+        zstd_bin = shutil.which("zstd")
+        if zstd_bin is None:
+            raise RuntimeError(
+                "Compressed .db3.zstd bag detected, but 'zstd' command is not available."
             )
-        return db3_files
+
+        cache_key = hashlib.sha256(str(self.path.resolve()).encode("utf-8")).hexdigest()[:16]
+        cache_dir = Path(tempfile.gettempdir()) / "bagx_db3_cache" / cache_key
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        decompressed_paths: list[Path] = []
+        for compressed_path in compressed_paths:
+            target_name = compressed_path.name.removesuffix(".zstd")
+            output_path = cache_dir / target_name
+            stamp_path = cache_dir / f"{target_name}.stamp"
+            stat = compressed_path.stat()
+            source_sig = f"{compressed_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
+            cached_sig = stamp_path.read_text() if stamp_path.exists() else ""
+            if not output_path.exists() or cached_sig != source_sig:
+                subprocess.run(
+                    [zstd_bin, "-d", "-f", str(compressed_path), "-o", str(output_path)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                stamp_path.write_text(source_sig)
+
+            decompressed_paths.append(output_path)
+
+        self._decompressed_db3_paths = decompressed_paths
+        return decompressed_paths
 
     def _summary_sqlite(self) -> BagSummary:
         db_paths = self._get_db3_paths()
@@ -529,7 +627,11 @@ def _parse_cdr_basic(raw_data: bytes, msg_type: str) -> dict:
         "sensor_msgs/msg/Imu": _parse_imu,
         "std_msgs/msg/Header": _parse_header,
         "geometry_msgs/msg/PoseStamped": _parse_pose_stamped,
+        "geometry_msgs/msg/PoseWithCovarianceStamped": _parse_pose_with_covariance_stamped,
+        "geometry_msgs/msg/TwistStamped": _parse_twist_stamped,
+        "nav_msgs/msg/Odometry": _parse_odometry,
         "sensor_msgs/msg/PointCloud2": _parse_pointcloud2_meta,
+        "tf2_msgs/msg/TFMessage": _parse_tf_message,
     }
 
     parser = parsers.get(msg_type)
@@ -553,6 +655,38 @@ def _read_cdr_header(data: bytes) -> tuple[int, str]:
         return 0, "<"
     endian = "<" if data[1] == 0x01 else ">"
     return 4, endian
+
+
+def _read_cdr_string(buf: bytes, pos: int, endian: str) -> tuple[str, int]:
+    """Read a CDR string field and return (decoded_string, next_aligned_pos)."""
+    if len(buf) < pos + 4:
+        raise ValueError("truncated string length")
+
+    length = struct.unpack_from(f"{endian}I", buf, pos)[0]
+    pos += 4
+    if length > len(buf) - pos:
+        raise ValueError("string length exceeds buffer")
+
+    raw = buf[pos : pos + length]
+    value = raw[:-1] if raw.endswith(b"\x00") else raw
+    pos += length
+    pos = (pos + 3) & ~3
+    return value.decode("utf-8", errors="replace"), pos
+
+
+def _read_std_header_from_buf(buf: bytes, pos: int, endian: str) -> tuple[dict, int]:
+    """Read std_msgs/Header payload from a CDR buffer at the given offset."""
+    if len(buf) < pos + 8:
+        raise ValueError("truncated header stamp")
+
+    sec, nanosec = struct.unpack_from(f"{endian}II", buf, pos)
+    pos += 8
+    frame_id, pos = _read_cdr_string(buf, pos, endian)
+    return {
+        "stamp_sec": sec,
+        "stamp_nanosec": nanosec,
+        "frame_id": frame_id,
+    }, pos
 
 
 def _parse_navsatfix(data: bytes) -> dict:
@@ -767,6 +901,170 @@ def _parse_pose_stamped(data: bytes) -> dict:
             "w": ow,
         }
 
+    return result
+
+
+def _parse_pose_with_covariance_stamped(data: bytes) -> dict:
+    """Parse geometry_msgs/msg/PoseWithCovarianceStamped from CDR."""
+    offset, endian = _read_cdr_header(data)
+    buf = data[offset:]
+    try:
+        header, pos = _read_std_header_from_buf(buf, 0, endian)
+    except ValueError:
+        return {"_raw_size": len(data), "_parse_error": True}
+
+    result = {
+        "stamp_sec": header["stamp_sec"],
+        "stamp_nanosec": header["stamp_nanosec"],
+        "frame_id": header["frame_id"],
+    }
+
+    pos = (pos + 7) & ~7
+    if len(buf) < pos + 56:
+        return result
+
+    px, py, pz, ox, oy, oz, ow = struct.unpack_from(f"{endian}7d", buf, pos)
+    pos += 56
+
+    pose = {
+        "pose": {
+            "position": {"x": px, "y": py, "z": pz},
+            "orientation": {"x": ox, "y": oy, "z": oz, "w": ow},
+        }
+    }
+
+    if len(buf) >= pos + 288:
+        pose["covariance"] = list(struct.unpack_from(f"{endian}36d", buf, pos))
+
+    result["pose"] = pose
+    return result
+
+
+def _parse_twist_stamped(data: bytes) -> dict:
+    """Parse geometry_msgs/msg/TwistStamped from CDR."""
+    offset, endian = _read_cdr_header(data)
+    buf = data[offset:]
+    try:
+        header, pos = _read_std_header_from_buf(buf, 0, endian)
+    except ValueError:
+        return {"_raw_size": len(data), "_parse_error": True}
+
+    result = {
+        "stamp_sec": header["stamp_sec"],
+        "stamp_nanosec": header["stamp_nanosec"],
+        "frame_id": header["frame_id"],
+    }
+
+    pos = (pos + 7) & ~7
+    if len(buf) < pos + 48:
+        return result
+
+    lvx, lvy, lvz, avx, avy, avz = struct.unpack_from(f"{endian}6d", buf, pos)
+    result["twist"] = {
+        "linear": {"x": lvx, "y": lvy, "z": lvz},
+        "angular": {"x": avx, "y": avy, "z": avz},
+    }
+    return result
+
+
+def _parse_odometry(data: bytes) -> dict:
+    """Parse nav_msgs/msg/Odometry from CDR."""
+    offset, endian = _read_cdr_header(data)
+    buf = data[offset:]
+    try:
+        header, pos = _read_std_header_from_buf(buf, 0, endian)
+    except ValueError:
+        return {"_raw_size": len(data), "_parse_error": True}
+
+    result = {
+        "stamp_sec": header["stamp_sec"],
+        "stamp_nanosec": header["stamp_nanosec"],
+        "frame_id": header["frame_id"],
+    }
+
+    try:
+        child_frame_id, pos = _read_cdr_string(buf, pos, endian)
+    except ValueError:
+        result["_parse_error"] = True
+        return result
+
+    result["child_frame_id"] = child_frame_id
+
+    pos = (pos + 7) & ~7
+    if len(buf) < pos + 56:
+        return result
+
+    px, py, pz, ox, oy, oz, ow = struct.unpack_from(f"{endian}7d", buf, pos)
+    pos += 56
+    pose = {
+        "pose": {
+            "position": {"x": px, "y": py, "z": pz},
+            "orientation": {"x": ox, "y": oy, "z": oz, "w": ow},
+        }
+    }
+    if len(buf) >= pos + 288:
+        pose["covariance"] = list(struct.unpack_from(f"{endian}36d", buf, pos))
+        pos += 288
+    result["pose"] = pose
+
+    if len(buf) < pos + 48:
+        return result
+
+    lvx, lvy, lvz, avx, avy, avz = struct.unpack_from(f"{endian}6d", buf, pos)
+    pos += 48
+    twist = {
+        "twist": {
+            "linear": {"x": lvx, "y": lvy, "z": lvz},
+            "angular": {"x": avx, "y": avy, "z": avz},
+        }
+    }
+    if len(buf) >= pos + 288:
+        twist["covariance"] = list(struct.unpack_from(f"{endian}36d", buf, pos))
+    result["twist"] = twist
+
+    return result
+
+
+def _parse_tf_message(data: bytes) -> dict:
+    """Parse tf2_msgs/msg/TFMessage from CDR."""
+    offset, endian = _read_cdr_header(data)
+    buf = data[offset:]
+    if len(buf) < 4:
+        return {"_raw_size": len(data), "_parse_error": True}
+
+    count = struct.unpack_from(f"{endian}I", buf, 0)[0]
+    pos = 4
+    transforms = []
+
+    for _ in range(count):
+        try:
+            header, pos = _read_std_header_from_buf(buf, pos, endian)
+            child_frame_id, pos = _read_cdr_string(buf, pos, endian)
+        except ValueError:
+            break
+
+        pos = (pos + 7) & ~7
+        if len(buf) < pos + 56:
+            break
+
+        tx, ty, tz, qx, qy, qz, qw = struct.unpack_from(f"{endian}7d", buf, pos)
+        pos += 56
+        transforms.append(
+            {
+                "stamp_sec": header["stamp_sec"],
+                "stamp_nanosec": header["stamp_nanosec"],
+                "frame_id": header["frame_id"],
+                "child_frame_id": child_frame_id,
+                "transform": {
+                    "translation": {"x": tx, "y": ty, "z": tz},
+                    "rotation": {"x": qx, "y": qy, "z": qz, "w": qw},
+                },
+            }
+        )
+
+    result = {"transforms": transforms}
+    if count > 0 and not transforms:
+        result["_parse_error"] = True
     return result
 
 
