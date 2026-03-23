@@ -710,9 +710,14 @@ def generate_recommendations(report: EvalReport) -> list[str]:
                     f"[green]:heavy_check_mark:[/green] IMU accel noise {accel_noise:.4f} m/s\u00b2 — good for LIO, set imu_acc_noise_density to {accel_noise:.4f}"
                 )
             else:
-                recs.append(
-                    f"[yellow]:warning:[/yellow] IMU accel noise {accel_noise:.4f} m/s\u00b2 — noisy, LiDAR-only odometry may outperform LIO"
-                )
+                if is_non_slam_domain:
+                    recs.append(
+                        f"[yellow]:warning:[/yellow] IMU accel noise {accel_noise:.4f} m/s\u00b2 — noisy, consider checking IMU calibration"
+                    )
+                else:
+                    recs.append(
+                        f"[yellow]:warning:[/yellow] IMU accel noise {accel_noise:.4f} m/s\u00b2 — noisy, LiDAR-only odometry may outperform LIO"
+                    )
 
         if not math.isnan(gyro_noise):
             if gyro_noise < 0.01:
@@ -870,15 +875,16 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
     moveit_indicators = {"/joint_states", "/display_planned_path", "/planning_scene",
                          "/move_group/result", "/execute_trajectory"}
     moveit_type_match = any("JointState" in t for t in topic_types.values())
+    moveit_name_match = any("joint_states" in t for t in topic_names)
     moveit_found = topic_names & moveit_indicators
 
-    if len(moveit_found) >= 2 or (moveit_type_match and len(moveit_found) >= 1):
+    if len(moveit_found) >= 2 or (moveit_type_match and (len(moveit_found) >= 1 or moveit_name_match)):
         recs.append("[bold cyan]MoveIt topics detected[/bold cyan]")
 
         for name, ttype in topic_types.items():
             if "JointState" in ttype and name in topics:
                 rate = topics[name]["rate_hz"]
-                if rate > 0:
+                if 0 < rate < 100_000:  # sanity check for broken timestamps
                     if rate >= 100:
                         recs.append(f"  [green]:heavy_check_mark:[/green] JointState ({name}) at {rate:.0f}Hz — good for motion planning")
                     else:
