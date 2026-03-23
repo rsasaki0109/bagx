@@ -68,6 +68,8 @@ def is_rate_anomaly_candidate(topic_name: str, topic_type: str) -> bool:
         "rosout",
         "statistics",
         "transition_event",
+        "_service_event",
+        "/result",
         "_action/status",
         "_action/feedback",
         "_action/get_result",

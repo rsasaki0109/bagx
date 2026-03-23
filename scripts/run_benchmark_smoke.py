@@ -156,6 +156,8 @@ def _create_control_bag(path: Path) -> Path:
         {"name": "/drive/cmd_vel", "type": "geometry_msgs/msg/TwistStamped", "format": "cdr"},
         {"name": "/planner/path", "type": "nav_msgs/msg/Path", "format": "cdr"},
         {"name": "/mission/_action/status", "type": "action_msgs/msg/GoalStatusArray", "format": "cdr"},
+        {"name": "/mission/result", "type": "example_interfaces/action/Fibonacci_Result", "format": "cdr"},
+        {"name": "/planner/compute_path/_service_event", "type": "nav_msgs/srv/GetPlan_Event", "format": "cdr"},
     ]
     messages: list[dict] = []
     base_ns = 1_700_001_300_000_000_000
@@ -190,8 +192,10 @@ def _create_control_bag(path: Path) -> Path:
 
     for i in range(6):
         ts = base_ns + i * 1_000_000_000
+        messages.append({"topic": "/planner/compute_path/_service_event", "timestamp_ns": ts - 5_000_000, "data": build_stub_cdr()})
         messages.append({"topic": "/planner/path", "timestamp_ns": ts, "data": build_stub_cdr()})
         messages.append({"topic": "/mission/_action/status", "timestamp_ns": ts + 10_000_000, "data": build_stub_cdr()})
+        messages.append({"topic": "/mission/result", "timestamp_ns": ts + 180_000_000, "data": build_stub_cdr()})
 
     messages.sort(key=lambda m: m["timestamp_ns"])
     return _create_db3(path, topics, messages)
@@ -246,7 +250,11 @@ def main() -> None:
                     "bag_path": str(control_bag),
                     "expect": {
                         "required_domains": ["Control"],
-                        "required_recommendations": ["Planning/control topics detected"],
+                        "required_recommendations": [
+                            "Planning/control topics detected",
+                            "Action result (/mission/result) recorded",
+                            "Service event (/planner/compute_path/_service_event) recorded",
+                        ],
                         "forbidden_recommendations": ["Nav2 topics detected"],
                         "min_domain_score": 90,
                     },
