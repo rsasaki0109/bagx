@@ -148,6 +148,55 @@ def _create_perception_bag(path: Path) -> Path:
     return _create_db3(path, topics, messages)
 
 
+def _create_control_bag(path: Path) -> Path:
+    from tests.conftest import _create_db3, build_odometry_cdr, build_stub_cdr, build_twist_stamped_cdr
+
+    topics = [
+        {"name": "/base/state/odom", "type": "nav_msgs/msg/Odometry", "format": "cdr"},
+        {"name": "/drive/cmd_vel", "type": "geometry_msgs/msg/TwistStamped", "format": "cdr"},
+        {"name": "/planner/path", "type": "nav_msgs/msg/Path", "format": "cdr"},
+        {"name": "/mission/_action/status", "type": "action_msgs/msg/GoalStatusArray", "format": "cdr"},
+    ]
+    messages: list[dict] = []
+    base_ns = 1_700_001_300_000_000_000
+
+    for i in range(80):
+        ts = base_ns + i * 40_000_000  # 25Hz
+        messages.append({
+            "topic": "/base/state/odom",
+            "timestamp_ns": ts,
+            "data": build_odometry_cdr(
+                stamp_sec=ts // 1_000_000_000,
+                stamp_nanosec=ts % 1_000_000_000,
+                position=(i * 0.03, 0.0, 0.0),
+                orientation=(0.0, 0.0, 0.0, 1.0),
+                linear=(0.4, 0.0, 0.0),
+                angular=(0.0, 0.0, 0.0),
+            ),
+        })
+
+    for i in range(64):
+        ts = base_ns + i * 50_000_000 + 15_000_000  # 20Hz
+        messages.append({
+            "topic": "/drive/cmd_vel",
+            "timestamp_ns": ts,
+            "data": build_twist_stamped_cdr(
+                stamp_sec=ts // 1_000_000_000,
+                stamp_nanosec=ts % 1_000_000_000,
+                linear=(0.1, 0.0, 0.0),
+                angular=(0.0, 0.0, 0.0),
+            ),
+        })
+
+    for i in range(6):
+        ts = base_ns + i * 1_000_000_000
+        messages.append({"topic": "/planner/path", "timestamp_ns": ts, "data": build_stub_cdr()})
+        messages.append({"topic": "/mission/_action/status", "timestamp_ns": ts + 10_000_000, "data": build_stub_cdr()})
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(path, topics, messages)
+
+
 def main() -> None:
     from bagx.contracts import REPORT_SCHEMA_VERSION
 
@@ -156,6 +205,7 @@ def main() -> None:
         nav2_bag = _create_nav2_bag(tmp_path / "nav2.db3")
         robotarm_bag = _create_robotarm_bag(tmp_path / "robotarm.db3")
         perception_bag = _create_perception_bag(tmp_path / "perception.db3")
+        control_bag = _create_control_bag(tmp_path / "control.db3")
 
         manifest_path = tmp_path / "smoke_suite.json"
         report_path = tmp_path / "benchmark-report.json"
@@ -191,6 +241,16 @@ def main() -> None:
                         "min_domain_score": 90,
                     },
                 },
+                {
+                    "name": "control-smoke",
+                    "bag_path": str(control_bag),
+                    "expect": {
+                        "required_domains": ["Control"],
+                        "required_recommendations": ["Planning/control topics detected"],
+                        "forbidden_recommendations": ["Nav2 topics detected"],
+                        "min_domain_score": 90,
+                    },
+                },
             ],
         }
         manifest_path.write_text(json.dumps(manifest, indent=2))
@@ -215,7 +275,7 @@ def main() -> None:
             raise SystemExit(f"unexpected schema_version: {data['schema_version']}")
         if data["report_type"] != "benchmark_suite":
             raise SystemExit(f"unexpected report_type: {data['report_type']}")
-        if data["failed_cases"] != 0 or data["passed_cases"] != 3:
+        if data["failed_cases"] != 0 or data["passed_cases"] != 4:
             raise SystemExit(f"unexpected benchmark result: {data}")
 
 

@@ -81,7 +81,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 
 | Command | One-liner |
 |---------|-----------|
-| `bagx eval bag.db3` | Is this bag ready? Auto-detects SLAM / Nav2 / Autoware / MoveIt / Perception |
+| `bagx eval bag.db3` | Is this bag ready? Auto-detects SLAM / Nav2 / Autoware / MoveIt / Perception / Control |
 | `bagx compare A.db3 B.db3` | Which sensor config is better? |
 | `bagx sync bag.db3 /imu /lidar` | Are my sensors synchronized? |
 | `bagx anomaly bag.db3` | Where did sensor quality drop? |
@@ -142,6 +142,13 @@ Perception topics detected
   ✔ Depth image (/camera/realsense_splitter_node/output/depth) at 30Hz — good for RGB-D perception
   ✔ Infra stereo streams are both recorded — depth debugging is possible
   ✔ Camera calibration topics are recorded — exported perception data is reusable
+
+$ bagx eval control_loop.db3
+Planning/control topics detected
+  ✔ State feedback (/base/state/odom) at 25Hz — good for closed-loop control
+  ✔ Control command (/drive/cmd_vel) at 20Hz — good for control-loop observability
+  ✔ Planner output (/planner/path) recorded 6 times — upstream planning is visible
+  ✔ Pipeline planner → command onset: 15ms median, 15ms P95
 ```
 
 ## Dogfooding

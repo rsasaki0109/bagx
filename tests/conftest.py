@@ -772,6 +772,53 @@ def perception_bag(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def generic_control_bag(tmp_path: Path) -> Path:
+    """Create a generic planning/control bag without Nav2/MoveIt-specific topics."""
+    topics = [
+        {"name": "/base/state/odom", "type": "nav_msgs/msg/Odometry", "format": "cdr"},
+        {"name": "/drive/cmd_vel", "type": "geometry_msgs/msg/TwistStamped", "format": "cdr"},
+        {"name": "/planner/path", "type": "nav_msgs/msg/Path", "format": "cdr"},
+        {"name": "/mission/_action/status", "type": "action_msgs/msg/GoalStatusArray", "format": "cdr"},
+    ]
+    messages = []
+    base_ns = 1_700_000_198_000_000_000
+
+    for i in range(125):
+        odom_ts = base_ns + i * 40_000_000  # 25Hz
+        data = build_odometry_cdr(
+            stamp_sec=odom_ts // 1_000_000_000,
+            stamp_nanosec=odom_ts % 1_000_000_000,
+            position=(i * 0.02, 0.0, 0.0),
+            orientation=(0.0, 0.0, 0.0, 1.0),
+            linear=(0.4, 0.0, 0.0),
+            angular=(0.0, 0.0, 0.02),
+        )
+        messages.append({"topic": "/base/state/odom", "timestamp_ns": odom_ts, "data": data})
+
+    for i in range(100):
+        cmd_ts = base_ns + i * 50_000_000 + 15_000_000  # 20Hz
+        cmd = build_twist_stamped_cdr(
+            stamp_sec=cmd_ts // 1_000_000_000,
+            stamp_nanosec=cmd_ts % 1_000_000_000,
+            linear=(0.3, 0.0, 0.0),
+            angular=(0.0, 0.0, 0.05),
+        )
+        messages.append({"topic": "/drive/cmd_vel", "timestamp_ns": cmd_ts, "data": cmd})
+
+    for i in range(8):
+        plan_ts = base_ns + i * 1_000_000_000
+        messages.append({"topic": "/planner/path", "timestamp_ns": plan_ts, "data": build_stub_cdr()})
+        messages.append({
+            "topic": "/mission/_action/status",
+            "timestamp_ns": plan_ts + 10_000_000,
+            "data": build_stub_cdr(),
+        })
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(tmp_path / "generic_control.db3", topics, messages)
+
+
+@pytest.fixture
 def moveit_bag(tmp_path: Path) -> Path:
     """Create a MoveIt-style bag with namespaced joint_states, planning, and execution topics."""
     topics = [

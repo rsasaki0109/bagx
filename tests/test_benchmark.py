@@ -110,6 +110,31 @@ class TestBenchmarkSuite:
         assert report.passed_cases == 1
         assert report.cases[0].detected_domains == ["Perception"]
 
+    def test_run_benchmark_suite_with_generic_control_domain(self, tmp_path: Path, generic_control_bag: Path):
+        manifest_path = _write_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "control-pass",
+                    "bag_path": str(generic_control_bag),
+                    "expect": {
+                        "required_domains": ["Control"],
+                        "required_recommendations": [
+                            "Planning/control topics detected",
+                            "planner → command onset",
+                        ],
+                        "forbidden_recommendations": ["Nav2 topics detected"],
+                        "min_domain_score": 90,
+                    },
+                }
+            ],
+        )
+
+        report = run_benchmark_suite(str(manifest_path))
+
+        assert report.passed_cases == 1
+        assert report.cases[0].detected_domains == ["Control"]
+
 
 class TestBenchmarkCli:
     def test_benchmark_cli_json_output(self, tmp_path: Path, nav2_bag: Path):
