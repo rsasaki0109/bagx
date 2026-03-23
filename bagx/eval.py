@@ -2111,7 +2111,7 @@ def _summarize_workflow_metrics(
 
 
 def _summarize_action_status_topic(topic: str, messages: list[dict[str, Any]]) -> WorkflowMetrics:
-    final_status_by_goal: dict[str, int] = {}
+    final_status_by_goal: dict[str, tuple[int, str | None]] = {}
     anonymous_counter = 0
 
     for message_index, data in enumerate(messages):
@@ -2123,20 +2123,21 @@ def _summarize_action_status_topic(topic: str, messages: list[dict[str, Any]]) -
             if not goal_id:
                 anonymous_counter += 1
                 goal_id = f"{topic}:{message_index}:{entry_index}:{anonymous_counter}"
-            final_status_by_goal[goal_id] = status
+            final_status_by_goal[goal_id] = (status, entry.get("reason"))
 
     success = 0
     failure = 0
     unknown = 0
     failure_reasons: Counter[str] = Counter()
-    for status in final_status_by_goal.values():
+    for status, reason_hint in final_status_by_goal.values():
         state, reason = _classify_action_status(status)
         if state == "success":
             success += 1
         elif state == "failure":
             failure += 1
-            if reason:
-                failure_reasons[reason] += 1
+            failure_reason = reason_hint or reason
+            if failure_reason:
+                failure_reasons[failure_reason] += 1
         else:
             unknown += 1
 
@@ -2326,6 +2327,7 @@ def _extract_goal_status_entries(data: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "goal_id": _extract_goal_id(entry),
                 "status": status,
+                "reason": _extract_reason_from_mapping(entry),
             }
         )
     return results
@@ -2362,18 +2364,19 @@ def _classify_action_status(status: int) -> tuple[str, str | None]:
 def _classify_workflow_payload(payload: Any) -> tuple[str, str | None]:
     fields = list(_walk_scalar_fields(payload))
     bool_success = _find_bool_field(fields, {"success", "succeeded", "ok"})
-    error_code = _find_numeric_field(fields, {"error_code", "return_code"})
-    status_code = _find_numeric_field(fields, {"status", "goal_status"})
+    error_code = _find_failure_code(fields)
+    status_code = _find_numeric_field(fields, {"status", "goal_status", "status_code"})
     reason = _find_reason_text(fields)
+    code_detail = _format_failure_code_detail(error_code)
 
     if bool_success is False:
-        return "failure", reason or "reported failure"
+        return "failure", _merge_failure_detail(reason, code_detail) or "reported failure"
     if error_code is not None and error_code != 0:
-        return "failure", reason or f"error_code={error_code}"
+        return "failure", _merge_failure_detail(reason, code_detail)
     if status_code is not None:
         status_state, status_reason = _classify_action_status(status_code)
         if status_state == "failure":
-            return "failure", reason or status_reason
+            return "failure", _merge_failure_detail(reason, code_detail) or status_reason
     if bool_success is True:
         return "success", None
     if status_code is not None:
@@ -2400,7 +2403,7 @@ def _walk_scalar_fields(payload: Any, prefix: str = "") -> Iterable[tuple[str, A
 
 
 def _find_bool_field(fields: list[tuple[str, Any]], names: set[str]) -> bool | None:
-    for path, value in fields:
+    for path, value in sorted(fields, key=lambda item: _field_priority(item[0]), reverse=True):
         last = _last_field_token(path)
         if last not in names:
             continue
@@ -2408,11 +2411,17 @@ def _find_bool_field(fields: list[tuple[str, Any]], names: set[str]) -> bool | N
             return value
         if isinstance(value, (int, float)) and value in {0, 1}:
             return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "success", "succeeded", "ok"}:
+                return True
+            if lowered in {"false", "failure", "failed", "error"}:
+                return False
     return None
 
 
 def _find_numeric_field(fields: list[tuple[str, Any]], names: set[str]) -> int | None:
-    for path, value in fields:
+    for path, value in sorted(fields, key=lambda item: _field_priority(item[0]), reverse=True):
         if _last_field_token(path) not in names:
             continue
         coerced = _coerce_int(value)
@@ -2421,8 +2430,40 @@ def _find_numeric_field(fields: list[tuple[str, Any]], names: set[str]) -> int |
     return None
 
 
+def _find_failure_code(fields: list[tuple[str, Any]]) -> int | None:
+    candidate_tokens = {"error_code", "return_code", "result_code", "code", "val"}
+    best_match: tuple[int, int] | None = None
+    for path, value in fields:
+        token = _last_field_token(path)
+        if token not in candidate_tokens:
+            continue
+        if token == "val" and not _path_has_any(path, ("error_code", "return_code", "result_code")):
+            continue
+        if token == "code" and not _path_has_any(path, ("error", "fail", "abort", "cancel", "result")):
+            continue
+        coerced = _coerce_int(value)
+        if coerced is None:
+            continue
+        priority = _field_priority(path)
+        if best_match is None or priority > best_match[0]:
+            best_match = (priority, coerced)
+    return best_match[1] if best_match is not None else None
+
+
 def _find_reason_text(fields: list[tuple[str, Any]]) -> str | None:
-    preferred_names = {"error_string", "error_message", "reason", "message", "details", "text"}
+    preferred_names = {
+        "error_string",
+        "error_message",
+        "failure_reason",
+        "reason",
+        "message",
+        "details",
+        "text",
+        "description",
+        "comment",
+        "diagnostic_message",
+    }
+    best_match: tuple[int, str] | None = None
     for path, value in fields:
         if _last_field_token(path) not in preferred_names:
             continue
@@ -2431,8 +2472,51 @@ def _find_reason_text(fields: list[tuple[str, Any]]) -> str | None:
         text = value.strip()
         if not text:
             continue
-        return text[:120]
-    return None
+        if text.lower() in {"ok", "success", "succeeded", "done"}:
+            continue
+        priority = _field_priority(path)
+        if best_match is None or priority > best_match[0]:
+            best_match = (priority, text[:120])
+    return best_match[1] if best_match is not None else None
+
+
+def _extract_reason_from_mapping(data: dict[str, Any]) -> str | None:
+    fields = list(_walk_scalar_fields(data))
+    return _merge_failure_detail(
+        _find_reason_text(fields),
+        _format_failure_code_detail(_find_failure_code(fields)),
+    )
+
+
+def _merge_failure_detail(reason: str | None, code_detail: str | None) -> str | None:
+    if reason and code_detail and code_detail not in reason:
+        return f"{reason} ({code_detail})"
+    return reason or code_detail
+
+
+def _format_failure_code_detail(code: int | None) -> str | None:
+    if code is None or code == 0:
+        return None
+    return f"error_code={code}"
+
+
+def _field_priority(path: str) -> int:
+    score = 0
+    lowered = path.lower()
+    if _path_has_any(lowered, ("error", "fail", "abort", "cancel")):
+        score += 6
+    if _path_has_any(lowered, ("response", "result")):
+        score += 4
+    if _path_has_any(lowered, ("status_list", "goal_info")):
+        score += 2
+    if _path_has_any(lowered, ("detail", "reason", "message", "text", "description")):
+        score += 1
+    return score
+
+
+def _path_has_any(path: str, fragments: tuple[str, ...]) -> bool:
+    lowered = path.lower()
+    return any(fragment in lowered for fragment in fragments)
 
 
 def _last_field_token(path: str) -> str:
@@ -2449,6 +2533,15 @@ def _coerce_int(value: Any) -> int | None:
         return value
     if isinstance(value, float) and value.is_integer():
         return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith(("+", "-")):
+            sign = text[0]
+            digits = text[1:]
+            if digits.isdigit():
+                return int(sign + digits)
+        if text.isdigit():
+            return int(text)
     return None
 
 
@@ -2457,6 +2550,8 @@ def _ensure_sequence(value: Any) -> list[Any]:
         return value
     if isinstance(value, tuple):
         return list(value)
+    if isinstance(value, dict):
+        return [value]
     return []
 
 

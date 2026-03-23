@@ -359,6 +359,87 @@ class TestFrameworkDetection:
         assert "planner unavailable" in recommendations
         assert report.to_dict()["workflow_metrics"][0]["kind"]
 
+    def test_workflow_metrics_extract_nested_codes_and_single_response_dict(self, monkeypatch):
+        summary = BagSummary(
+            path=Path("/tmp/fake-control-rich.db3"),
+            duration_ns=1_000_000_000,
+            start_time_ns=1_700_000_260_000_000_000,
+            end_time_ns=1_700_000_261_000_000_000,
+            message_count=3,
+            topics={
+                "/mission/_action/status": TopicInfo("/mission/_action/status", "action_msgs/msg/GoalStatusArray", 1),
+                "/mission/result": TopicInfo("/mission/result", "example_interfaces/action/Fibonacci_GetResult_Response", 1),
+                "/planner/compute_path/_service_event": TopicInfo("/planner/compute_path/_service_event", "nav_msgs/srv/GetPlan_Event", 1),
+            },
+        )
+        base = summary.start_time_ns
+        messages = [
+            Message(
+                "/mission/_action/status",
+                base + 10_000_000,
+                {
+                    "status_list": [
+                        {
+                            "goal_info": {"goal_id": {"uuid": [3] * 16}},
+                            "status": 6,
+                            "text": "controller aborted by safety stop",
+                        }
+                    ]
+                },
+            ),
+            Message(
+                "/mission/result",
+                base + 20_000_000,
+                {
+                    "result": {
+                        "success": False,
+                        "error_code": {"val": 42},
+                        "details": "joint limit exceeded",
+                    }
+                },
+            ),
+            Message(
+                "/planner/compute_path/_service_event",
+                base + 30_000_000,
+                {
+                    "request": {"goal": "dock"},
+                    "response": {
+                        "return_code": "17",
+                        "description": "planner timeout",
+                    },
+                },
+            ),
+        ]
+
+        class FakeReader:
+            def __init__(self, _path: str):
+                pass
+
+            def summary(self):
+                return summary
+
+            def read_messages(self, topics=None):
+                if topics is None:
+                    yield from messages
+                    return
+                allowed = set(topics)
+                yield from (message for message in messages if message.topic in allowed)
+
+        monkeypatch.setattr("bagx.eval.BagReader", FakeReader)
+
+        report = evaluate_bag("/tmp/fake-control-rich.db3")
+        metrics = {metric.topic: metric for metric in report.workflow_metrics}
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert metrics["/mission/_action/status"].failure_reasons == ["controller aborted by safety stop"]
+        assert metrics["/mission/result"].failure_reasons == ["joint limit exceeded (error_code=42)"]
+        assert metrics["/planner/compute_path/_service_event"].request_events == 1
+        assert metrics["/planner/compute_path/_service_event"].response_events == 1
+        assert metrics["/planner/compute_path/_service_event"].failure_reasons == ["planner timeout (error_code=17)"]
+        assert "controller aborted by safety stop" in recommendations
+        assert "joint limit exceeded (error_code=42)" in recommendations
+        assert "planner timeout (error_code=17)" in recommendations
+
 
 class TestEvalConfig:
     """Test EvalConfig customization."""
