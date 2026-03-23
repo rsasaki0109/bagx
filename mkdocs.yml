@@ -59,11 +59,13 @@ nav:
       - ask — LLM Queries: guide/ask.md
       - scene — 3D State: guide/scene.md
       - batch — Batch Processing: guide/batch.md
+      - benchmark — Benchmark Suites: guide/benchmark.md
   - API Reference:
       - reader: api/reader.md
       - eval: api/eval.md
       - compare: api/compare.md
       - sync: api/sync.md
+      - benchmark: api/benchmark.md
       - export: api/export.md
       - anomaly: api/anomaly.md
       - scenario: api/scenario.md

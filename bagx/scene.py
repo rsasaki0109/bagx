@@ -16,6 +16,7 @@ from typing import TextIO
 from rich.console import Console
 from rich.table import Table
 
+from bagx.contracts import report_metadata
 from bagx.reader import BagReader, Message
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class SceneReport:
             "state_count": len(self.states),
             "states": [_state_to_dict(s) for s in self.states],
         }
+        d.update(report_metadata("scene"))
         return d
 
 

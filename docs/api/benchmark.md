@@ -1,0 +1,3 @@
+# benchmark
+
+::: bagx.benchmark

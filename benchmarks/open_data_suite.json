@@ -1,0 +1,56 @@
+{
+  "suite_name": "open-data-dogfood",
+  "cases": [
+    {
+      "name": "autoware-all-sensors-bag4",
+      "bag_path": "${BAGX_REALBAGS}/autoware_isuzu_all_sensors_bag4",
+      "report_type": "eval",
+      "expect": {
+        "min_overall_score": 70,
+        "min_domain_score": 70,
+        "required_domains": ["Autoware"],
+        "required_recommendations": [
+          "Autoware topics detected"
+        ]
+      }
+    },
+    {
+      "name": "autoware-driving-20",
+      "bag_path": "${BAGX_REALBAGS}/driving_20",
+      "report_type": "eval",
+      "expect": {
+        "min_overall_score": 95,
+        "required_domains": ["Autoware"],
+        "required_recommendations": [
+          "Vehicle status (/vehicle/status/velocity_status)",
+          "LiDAR (/sensing/lidar/front/velodyne_packets)"
+        ],
+        "min_topic_rates": {
+          "/vehicle/status/velocity_status": 50
+        }
+      }
+    },
+    {
+      "name": "nvidia-r2b-robotarm",
+      "bag_path": "${BAGX_REALBAGS}/r2b_robotarm",
+      "report_type": "eval",
+      "expect": {
+        "min_overall_score": 90,
+        "min_domain_score": 90,
+        "required_domains": ["RobotArm"],
+        "required_recommendations": [
+          "Robot arm perception/manipulation topics detected",
+          "Camera calibration topics are recorded"
+        ],
+        "forbidden_recommendations": [
+          "No GNSS data",
+          "No IMU data"
+        ],
+        "min_topic_rates": {
+          "/joint_states": 100,
+          "/camera_1/color/image_raw": 15
+        }
+      }
+    }
+  ]
+}

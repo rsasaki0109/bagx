@@ -39,6 +39,9 @@ bagx eval your_bag.db3
 
 # Export to JSON for inspection
 bagx eval your_bag.db3 --json report.json
+
+# Run a benchmark suite
+bagx benchmark benchmarks/open_data_suite.json
 ```
 
 ## CLI options

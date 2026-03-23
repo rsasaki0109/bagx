@@ -10,6 +10,7 @@ from typing import TextIO
 from rich.console import Console
 from rich.table import Table
 
+from bagx.contracts import report_metadata
 from bagx.eval import evaluate_bag
 
 
@@ -32,7 +33,7 @@ class CompareReport:
     summary: str
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "bag_a": self.bag_a,
             "bag_b": self.bag_b,
             "items": [
@@ -49,6 +50,8 @@ class CompareReport:
             "winner": self.winner,
             "summary": self.summary,
         }
+        data.update(report_metadata("compare"))
+        return data
 
 
 def _compare_metric(

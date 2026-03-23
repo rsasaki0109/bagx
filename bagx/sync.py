@@ -11,6 +11,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
+from bagx.contracts import report_metadata
 from bagx.reader import BagReader
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,12 @@ class SyncReport:
     pairs: list[SyncPairResult]
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "bag_path": self.bag_path,
             "pairs": [asdict(p) for p in self.pairs],
         }
+        data.update(report_metadata("sync"))
+        return data
 
 
 def analyze_sync(

@@ -15,6 +15,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
+from bagx.contracts import report_metadata
 from bagx.reader import BagReader, Message
 from bagx.topic_filters import is_rate_anomaly_candidate
 
@@ -45,11 +46,13 @@ class AnomalyReport:
     anomalies: list[AnomalyEvent] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "bag_path": self.bag_path,
             "total_anomalies": self.total_anomalies,
             "anomalies": [asdict(a) for a in self.anomalies],
         }
+        data.update(report_metadata("anomaly"))
+        return data
 
 
 def detect_anomalies(

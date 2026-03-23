@@ -20,6 +20,8 @@ bagx analyzes your rosbag and gives you:
 - **Exact IMU noise values** to paste into your SLAM config
 - **Sync delay warnings** so you know when to enable deskew
 - **"Use LiDAR-only"** when your IMU is too noisy for LIO
+- **Framework-aware checks** for Nav2, Autoware, MoveIt, and RGB-D robot arms
+- **Manifest-driven benchmark suites** you can rerun across public and private bags
 
 ## The problem
 
@@ -69,6 +71,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | `bagx export bag.db3 --ai` | Export to Parquet/JSON for ML |
 | `bagx batch eval *.db3 --csv` | Rank an entire dataset |
 | `bagx ask bag.db3 "question"` | Ask questions via LLM |
+| `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 
 ## Tested on public datasets
 
@@ -126,6 +129,28 @@ Recent dogfood runs:
 - `nav2-deep-final-20260324-185315`: `Overall 100.0/100`, `LaserScan 13Hz`, `plan → cmd_vel onset 11ms median`
 - `moveit-exec-final-20260324-185315`: `Overall 100.0/100`, `JointState 115Hz`, `planned_path → arm execution 5ms median`
 - `autoware_isuzu_all_sensors_bag4`: real bag, `Overall 72.2/100`, plus a sensing-only note when planning/control topics are absent
+- `driving_20_kmh_2022_06_10-16_01_55_compressed`: official Autoware open-data bag, `Overall 99.0/100`, LiDAR packet sync and `/vehicle/status/velocity_status` captured
+- `r2b_robotarm`: official NVIDIA open-data MCAP, `Overall 96.0/100`, RGB-D + joint-state manipulation perception checks
+
+## Benchmark suites
+
+`bagx` now supports manifest-driven benchmark suites so public bags can become repeatable regression tests instead of one-off dogfood runs.
+
+The repository includes [benchmarks/open_data_suite.json](/workspace/ai_coding_ws/bagx/benchmarks/open_data_suite.json), which covers:
+
+- Autoware official `all-sensors-bag4`
+- Autoware official `driving_20_kmh_2022_06_10-16_01_55_compressed`
+- NVIDIA official `r2b_robotarm`
+
+Typical usage:
+
+```bash
+export BAGX_REALBAGS=/tmp/bagx_realbags
+bagx benchmark benchmarks/open_data_suite.json
+bagx benchmark benchmarks/open_data_suite.json --json benchmark-report.json
+```
+
+JSON outputs now include `schema_version`, `report_type`, and `bagx_version`, so they are easier to gate in CI and compare across releases.
 
 Typical local workflow:
 
