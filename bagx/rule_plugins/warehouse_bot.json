@@ -52,7 +52,7 @@
         },
         {
           "kind": "latency",
-          "label": "mission path \u2192 controller",
+          "label": "mission path → controller",
           "input": {
             "name_contains": "mission_path"
           },
@@ -64,7 +64,7 @@
         },
         {
           "kind": "latency",
-          "label": "service call \u2192 mission path",
+          "label": "service call → mission path",
           "input": {
             "name_contains": "_service_event"
           },

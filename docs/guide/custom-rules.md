@@ -11,14 +11,25 @@ The custom rule engine works on:
 
 This is enough for many internal stacks where the important question is "did we record the right topics at the right rates, and did the control loop react quickly enough?"
 
+Rules can be loaded from:
+
+- a JSON file path
+- a built-in plugin name such as `warehouse_bot`
+- a JSON file discovered via `BAGX_RULE_PLUGIN_PATH`
+- an installed Python package that exposes a `bagx.rules` entry point
+
 ## CLI usage
 
 ```bash
+bagx rules list
+bagx eval warehouse_bag.db3 --rules warehouse_bot
 bagx eval warehouse_bag.db3 --rules examples/custom_rules/warehouse_bot.json
 bagx benchmark benchmark.json --rules examples/custom_rules/warehouse_bot.json
 ```
 
 `benchmark` also supports `rules_path` inside the manifest, either at the top level or per case.
+
+Use `bagx rules list` to see built-in and installed plugins.
 
 ## Rule format
 
@@ -60,6 +71,19 @@ bagx benchmark benchmark.json --rules examples/custom_rules/warehouse_bot.json
 ```
 
 See [examples/custom_rules/warehouse_bot.json](/workspace/ai_coding_ws/bagx/examples/custom_rules/warehouse_bot.json) for a complete example.
+
+## Plugin distribution
+
+For a team-internal stack, the easiest options are:
+
+- ship a JSON file and point `BAGX_RULE_PLUGIN_PATH` at its directory
+- package your rules in Python and expose a `bagx.rules` entry point that returns a JSON dict, a path, or a `CustomRuleSet`
+
+That lets other users run:
+
+```bash
+bagx eval my_bag.db3 --rules your_plugin_name
+```
 
 ## Supported selectors
 

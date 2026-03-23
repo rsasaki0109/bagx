@@ -19,9 +19,10 @@ bagx eval your_bag.db3
 bagx analyzes your rosbag and tells you:
 - **SLAM readiness**: IMU noise, GNSS quality, LiDAR↔IMU sync, and whether LIO is a bad idea
 - **Navigation/control readiness**: odom / scan / costmap rates, goal observability, and `plan → cmd_vel` latency
+- **Workflow outcome visibility**: action/service success rate, terminal failures, and top failure reasons when those topics are recorded
 - **Perception dataset readiness**: RGB / depth / infra rates, camera calibration presence, and reusable export structure
 - **Manipulation readiness**: joint-state rate, planner visibility, and `planned_path → arm execution` latency
-- **Custom stack support**: user-defined rules on topic names/types/rates/latencies for custom messages
+- **Custom stack support**: user-defined rules on topic names/types/rates/latencies for custom messages, loaded from files or plugins
 - **Repeatability**: manifest-driven benchmark suites you can rerun across public and private bags
 
 ## What bagx answers
@@ -32,7 +33,7 @@ When a rosbag is not for SLAM, the value is usually one of these:
 - *"Did my Autoware recording include the sensing and vehicle topics I actually need?"* → bagx verifies camera, LiDAR, GNSS, `/vehicle/status/*`, and whether planning/control topics are present
 - *"Is this RGB-D bag usable for perception work, or did I forget camera_info / depth / infra?"* → bagx flags stream rates, calibration topics, and RGB-D coverage
 - *"Did MoveIt record just planning, or also execution?"* → bagx checks `joint_states`, action topics, and controller activity
-- *"We use custom messages, can bagx still help?"* → `bagx eval --rules rules.json` adds custom domains and checks without needing message decode
+- *"We use custom messages, can bagx still help?"* → `bagx eval --rules warehouse_bot` or `--rules rules.json` adds custom domains and checks without needing message decode
 - *"Which of these bags should become my regression benchmark?"* → `bagx benchmark` and `bagx batch eval` make that repeatable
 
 ## Example: catching a real problem
@@ -93,6 +94,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | `bagx ask bag.db3 "question"` | Ask questions via LLM |
 | `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 | `bagx eval bag.db3 --rules rules.json` | Apply custom topic/type/rate/latency rules for your stack |
+| `bagx rules list` | List discoverable built-in and installed custom-rule plugins |
 
 ## Representative results
 
@@ -102,6 +104,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | Ouster OS0-32 | SLAM | **77** | IMU is too slow and sync is weak, so deskew / sensor changes are needed |
 | `driving_20_kmh_2022_06_10-16_01_55_compressed` | Autoware sensing/control | **99** | LiDAR packets and `/vehicle/status/velocity_status` are present and healthy |
 | `r2b_galileo` | Multi-camera perception | **90.5** | Eight compressed camera streams, IMU, and chassis odom are recorded and time-aligned |
+| `r2b_whitetunnel` | Multi-camera perception | **91.3** | Eight compressed camera streams plus IMU are recorded; bagx flags noisy accel and still validates perception coverage |
 | `r2b_galileo2` | Camera perception | **97.5** | RGB-D + infra + camera_info are all recorded, so the bag is reusable for perception work |
 | `r2b_robotarm` | Manipulation perception | **96.0** | RGB-D + `joint_states` make it suitable for robot-arm perception benchmarking |
 | `nav2-deep-final-20260324-185315` | Navigation/control | **100** | Nav2 plan, costmap, and `plan → cmd_vel` loop are all observable |
@@ -153,8 +156,13 @@ Planning/control topics detected
   ✔ Control command (/drive/cmd_vel) at 20Hz — good for control-loop observability
   ✔ Planner output (/planner/path) recorded 6 times — upstream planning is visible
   ✔ Pipeline planner → command onset: 15ms median, 15ms P95
+  ✔ Action result (/mission/result): 8/8 results succeeded
+  ✔ Service responses (/planner/compute_path/_service_event): 8/8 requests have responses
 
-$ bagx eval warehouse_bag.db3 --rules examples/custom_rules/warehouse_bot.json
+$ bagx rules list
+warehouse_bot  builtin:warehouse_bot  Wheel odom + controller command + mission path/result checks...
+
+$ bagx eval warehouse_bag.db3 --rules warehouse_bot
 WarehouseBot custom rules matched
   ✔ Wheel odometry (/warehouse_bot/wheel_odom) at 50Hz — custom rule satisfied
   ✔ Controller command (/warehouse_bot/controller_cmd) at 25Hz — custom rule satisfied
@@ -177,6 +185,7 @@ Recent dogfood runs:
 - `autoware_isuzu_all_sensors_bag4`: real bag, `Overall 72.2/100`, plus a sensing-only note when planning/control topics are absent
 - `driving_20_kmh_2022_06_10-16_01_55_compressed`: official Autoware open-data bag, `Overall 99.0/100`, LiDAR packet sync and `/vehicle/status/velocity_status` captured
 - `r2b_galileo`: official NVIDIA open-data MCAP, `Overall 90.5/100`, eight compressed camera streams plus IMU and chassis odom
+- `r2b_whitetunnel`: official NVIDIA open-data MCAP, `Overall 91.3/100`, eight compressed camera streams plus IMU and camera calibration coverage
 - `r2b_robotarm`: official NVIDIA open-data MCAP, `Overall 96.0/100`, RGB-D + joint-state manipulation perception checks
 - `r2b_galileo2`: official NVIDIA open-data MCAP, `Overall 95.3/100`, camera-only RGB-D perception checks without SLAM-specific false advice
 
@@ -190,11 +199,13 @@ The repository includes [benchmarks/open_data_suite.json](/workspace/ai_coding_w
 - Autoware official `driving_20_kmh_2022_06_10-16_01_55_compressed`
 - NVIDIA official `r2b_robotarm`
 - NVIDIA official `r2b_galileo`
+- NVIDIA official `r2b_whitetunnel`
 - NVIDIA official `r2b_galileo2`
 
 It also includes [benchmarks/non_slam_suite.json](/workspace/ai_coding_ws/bagx/benchmarks/non_slam_suite.json), which focuses on non-SLAM value:
 
 - NVIDIA official `r2b_galileo2` camera-only perception
+- NVIDIA official `r2b_whitetunnel` multi-camera perception
 - NVIDIA official `r2b_robotarm` manipulation perception
 - Local Nav2 dogfood bags under `.cache/dogfood/`
 - Local MoveIt dogfood bags under `.cache/dogfood/`
@@ -206,7 +217,8 @@ export BAGX_REALBAGS=/tmp/bagx_realbags
 bagx benchmark benchmarks/open_data_suite.json
 bagx benchmark benchmarks/open_data_suite.json --json benchmark-report.json
 bagx benchmark benchmarks/non_slam_suite.json
-bagx eval my_custom_stack.db3 --rules examples/custom_rules/warehouse_bot.json
+bagx rules list
+bagx eval my_custom_stack.db3 --rules warehouse_bot
 ```
 
 JSON outputs now include `schema_version`, `report_type`, and `bagx_version`, so they are easier to gate in CI and compare across releases.

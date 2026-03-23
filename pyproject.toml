@@ -61,6 +61,9 @@ bagx = "bagx.cli:app"
 [tool.setuptools.packages.find]
 include = ["bagx*"]
 
+[tool.setuptools.package-data]
+bagx = ["rule_plugins/*.json"]
+
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
 

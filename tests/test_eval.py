@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from bagx.eval import EvalConfig, evaluate_bag
+from bagx.reader import BagSummary, Message, TopicInfo
 
 
 class TestEvalGnss:
@@ -258,6 +259,105 @@ class TestFrameworkDetection:
         assert "Pipeline mission path → controller" in recommendations
         assert "No GNSS data" not in recommendations
         assert "No IMU data" not in recommendations
+
+    def test_builtin_rule_plugin_detects_custom_domain(self, custom_rule_bag: Path):
+        report = evaluate_bag(str(custom_rule_bag), custom_rules_path="warehouse_bot")
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert report.custom_domains
+        assert report.custom_domains[0].name == "WarehouseBot"
+        assert "WarehouseBot custom rules matched" in recommendations
+        assert "Mission result (/warehouse_bot/mission/result) recorded" in recommendations
+
+    def test_workflow_metrics_capture_success_failure_and_reasons(self, monkeypatch):
+        summary = BagSummary(
+            path=Path("/tmp/fake-control.db3"),
+            duration_ns=2_000_000_000,
+            start_time_ns=1_700_000_250_000_000_000,
+            end_time_ns=1_700_000_252_000_000_000,
+            message_count=10,
+            topics={
+                "/base/state/odom": TopicInfo("/base/state/odom", "nav_msgs/msg/Odometry", 4),
+                "/drive/cmd_vel": TopicInfo("/drive/cmd_vel", "geometry_msgs/msg/TwistStamped", 4),
+                "/planner/path": TopicInfo("/planner/path", "nav_msgs/msg/Path", 2),
+                "/mission/_action/status": TopicInfo("/mission/_action/status", "action_msgs/msg/GoalStatusArray", 2),
+                "/mission/result": TopicInfo("/mission/result", "example_interfaces/action/Fibonacci_GetResult_Response", 2),
+                "/planner/compute_path/_service_event": TopicInfo("/planner/compute_path/_service_event", "nav_msgs/srv/GetPlan_Event", 2),
+            },
+        )
+        base = summary.start_time_ns
+        status_ok = {
+            "status_list": [
+                {
+                    "goal_info": {"goal_id": {"uuid": [1] * 16}},
+                    "status": 4,
+                }
+            ]
+        }
+        status_fail = {
+            "status_list": [
+                {
+                    "goal_info": {"goal_id": {"uuid": [2] * 16}},
+                    "status": 6,
+                }
+            ]
+        }
+        messages = [
+            Message("/planner/compute_path/_service_event", base, {"request": [{"goal": "A"}], "response": [{"success": True}]}),
+            Message("/planner/path", base + 5_000_000, {"poses": []}),
+            Message("/mission/_action/status", base + 10_000_000, status_ok),
+            Message("/mission/result", base + 20_000_000, {"status": 4, "result": {"success": True}}),
+            Message("/drive/cmd_vel", base + 25_000_000, {"twist": {"linear": {"x": 0.2}}}),
+            Message("/base/state/odom", base + 40_000_000, {"pose": {"pose": {"position": {"x": 0.1}}}}),
+            Message(
+                "/planner/compute_path/_service_event",
+                base + 1_000_000_000,
+                {"request": [{"goal": "B"}], "response": [{"success": False, "message": "planner unavailable"}]},
+            ),
+            Message("/planner/path", base + 1_005_000_000, {"poses": []}),
+            Message("/mission/_action/status", base + 1_010_000_000, status_fail),
+            Message(
+                "/mission/result",
+                base + 1_020_000_000,
+                {"status": 6, "result": {"success": False, "error_message": "controller timeout"}},
+            ),
+        ]
+
+        class FakeReader:
+            def __init__(self, _path: str):
+                pass
+
+            def summary(self):
+                return summary
+
+            def read_messages(self, topics=None):
+                if topics is None:
+                    yield from messages
+                    return
+                allowed = set(topics)
+                yield from (message for message in messages if message.topic in allowed)
+
+        monkeypatch.setattr("bagx.eval.BagReader", FakeReader)
+
+        report = evaluate_bag("/tmp/fake-control.db3")
+        metrics = {metric.topic: metric for metric in report.workflow_metrics}
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert metrics["/mission/_action/status"].success_events == 1
+        assert metrics["/mission/_action/status"].failure_events == 1
+        assert metrics["/mission/_action/status"].failure_reasons == ["aborted"]
+        assert metrics["/mission/result"].success_events == 1
+        assert metrics["/mission/result"].failure_events == 1
+        assert metrics["/mission/result"].failure_reasons == ["controller timeout"]
+        assert metrics["/planner/compute_path/_service_event"].request_events == 2
+        assert metrics["/planner/compute_path/_service_event"].response_events == 2
+        assert metrics["/planner/compute_path/_service_event"].failure_reasons == ["planner unavailable"]
+        assert "Action completion (/mission/_action/status): 1/2 terminal goals succeeded" in recommendations
+        assert "Action result (/mission/result): 1/2 results succeeded" in recommendations
+        assert "controller timeout" in recommendations
+        assert "Service responses (/planner/compute_path/_service_event): 2/2 requests have responses" in recommendations
+        assert "planner unavailable" in recommendations
+        assert report.to_dict()["workflow_metrics"][0]["kind"]
 
 
 class TestEvalConfig:
