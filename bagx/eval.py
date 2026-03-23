@@ -93,13 +93,19 @@ class EvalReport:
     topic_count: int
     gnss: GnssMetrics | None = None
     imu: ImuMetrics | None = None
+    imu_topic: str = ""
     sync: SyncMetrics | None = None
     overall_score: float = 0.0
 
     def to_dict(self) -> dict:
         d = asdict(self)
         # Clean up NaN for JSON
-        return _clean_nan(d)
+        d = _clean_nan(d)
+        # Add recommendations
+        d["recommendations"] = [
+            _strip_rich_markup(r) for r in generate_recommendations(self)
+        ]
+        return d
 
 
 def _clean_nan(obj):
@@ -179,6 +185,7 @@ def evaluate_bag(
             )
             if best_imu is None or imu_result.score > best_imu.score:
                 best_imu = imu_result
+                report.imu_topic = topic_name
         report.imu = best_imu
     if report.imu is None:
         logger.info("No IMU topics found in %s", bag_path)
@@ -502,7 +509,11 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
     if console is None:
         console = Console()
 
-    console.print(f"\n[bold]Bag Evaluation: [cyan]{report.bag_path}[/cyan][/bold]")
+    from pathlib import Path as _Path
+
+    bag_name = _Path(report.bag_path).name or _Path(report.bag_path).stem
+    console.print(f"\n[bold]Bag Evaluation: [cyan]{bag_name}[/cyan][/bold]")
+    console.print(f"[dim]{report.bag_path}[/dim]")
     console.print(
         f"Duration: {report.duration_sec:.1f}s | Messages: {report.total_messages:,} | Topics: {report.topic_count}"
     )
@@ -534,7 +545,10 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
 
     if report.imu:
         m = report.imu
-        table = Table(title="IMU Quality", show_header=True)
+        imu_title = "IMU Quality"
+        if report.imu_topic:
+            imu_title += f" ({report.imu_topic})"
+        table = Table(title=imu_title, show_header=True)
         table.add_column("Metric", style="bold")
         table.add_column("Value", justify="right")
         table.add_row("Messages", str(m.total_messages))
@@ -608,6 +622,12 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         for rec in recs:
             console.print(f"  {rec}")
     console.print()
+
+
+def _strip_rich_markup(text: str) -> str:
+    """Remove rich markup tags for plain text output (JSON, etc.)."""
+    import re
+    return re.sub(r"\[/?[^\]]*\]", "", text).replace(":heavy_check_mark:", "OK").replace(":warning:", "WARNING").replace(":x:", "ERROR").replace(":information_source:", "INFO")
 
 
 def generate_recommendations(report: EvalReport) -> list[str]:
