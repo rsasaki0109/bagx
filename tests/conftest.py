@@ -6,6 +6,7 @@ without requiring ROS2.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import struct
 from pathlib import Path
@@ -828,6 +829,99 @@ def generic_control_bag(tmp_path: Path) -> Path:
 
     messages.sort(key=lambda m: m["timestamp_ns"])
     return _create_db3(tmp_path / "generic_control.db3", topics, messages)
+
+
+@pytest.fixture
+def custom_rule_bag(tmp_path: Path) -> Path:
+    """Create a bag with custom message types that can be evaluated via rules."""
+    topics = [
+        {"name": "/warehouse_bot/wheel_odom", "type": "warehouse_msgs/msg/WheelOdometry", "format": "cdr"},
+        {"name": "/warehouse_bot/controller_cmd", "type": "warehouse_msgs/msg/ControllerCommand", "format": "cdr"},
+        {"name": "/warehouse_bot/mission_path", "type": "warehouse_msgs/msg/MissionPath", "format": "cdr"},
+        {"name": "/warehouse_bot/mission/_action/status", "type": "action_msgs/msg/GoalStatusArray", "format": "cdr"},
+        {"name": "/warehouse_bot/mission/result", "type": "warehouse_msgs/action/Mission_Result", "format": "cdr"},
+        {"name": "/warehouse_bot/plan_path/_service_event", "type": "warehouse_msgs/srv/PlanPath_Event", "format": "cdr"},
+    ]
+    messages = []
+    base_ns = 1_700_000_199_000_000_000
+
+    for i in range(160):
+        odom_ts = base_ns + i * 20_000_000  # 50Hz
+        messages.append({"topic": "/warehouse_bot/wheel_odom", "timestamp_ns": odom_ts, "data": build_stub_cdr()})
+
+    for i in range(90):
+        cmd_ts = base_ns + i * 40_000_000 + 10_000_000  # 25Hz
+        messages.append({"topic": "/warehouse_bot/controller_cmd", "timestamp_ns": cmd_ts, "data": build_stub_cdr()})
+
+    for i in range(10):
+        plan_ts = base_ns + i * 800_000_000
+        messages.append({"topic": "/warehouse_bot/plan_path/_service_event", "timestamp_ns": plan_ts - 5_000_000, "data": build_stub_cdr()})
+        messages.append({"topic": "/warehouse_bot/mission_path", "timestamp_ns": plan_ts, "data": build_stub_cdr()})
+        messages.append({"topic": "/warehouse_bot/mission/_action/status", "timestamp_ns": plan_ts + 20_000_000, "data": build_stub_cdr()})
+        messages.append({"topic": "/warehouse_bot/mission/result", "timestamp_ns": plan_ts + 120_000_000, "data": build_stub_cdr()})
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(tmp_path / "custom_rule.db3", topics, messages)
+
+
+@pytest.fixture
+def custom_rules_file(tmp_path: Path) -> Path:
+    """Create a custom rule file for warehouse-style custom messages."""
+    path = tmp_path / "warehouse_rules.json"
+    path.write_text(json.dumps({
+        "domains": [
+            {
+                "name": "WarehouseBot",
+                "min_matches": 2,
+                "match_topics": [
+                    {"name_contains": "wheel_odom", "type_contains": "WheelOdometry"},
+                    {"name_contains": "controller_cmd", "type_contains": "ControllerCommand"},
+                    {"name_contains": "mission_path", "type_contains": "MissionPath"},
+                ],
+                "checks": [
+                    {
+                        "kind": "topic_rate",
+                        "label": "Wheel odometry",
+                        "selector": {"name_contains": "wheel_odom"},
+                        "min_rate_hz": 20,
+                    },
+                    {
+                        "kind": "topic_rate",
+                        "label": "Controller command",
+                        "selector": {"name_contains": "controller_cmd"},
+                        "min_rate_hz": 10,
+                    },
+                    {
+                        "kind": "topic_exists",
+                        "label": "Mission path",
+                        "selector": {"name_contains": "mission_path"},
+                    },
+                    {
+                        "kind": "topic_exists",
+                        "label": "Mission result",
+                        "selector": {"suffix": "/result"},
+                    },
+                    {
+                        "kind": "latency",
+                        "label": "mission path → controller",
+                        "input": {"name_contains": "mission_path"},
+                        "output": {"name_contains": "controller_cmd"},
+                        "target_ms": 100,
+                        "max_response_ms": 1000,
+                    },
+                    {
+                        "kind": "latency",
+                        "label": "service call → mission path",
+                        "input": {"name_contains": "_service_event"},
+                        "output": {"name_contains": "mission_path"},
+                        "target_ms": 50,
+                        "max_response_ms": 500,
+                    },
+                ],
+            }
+        ]
+    }, indent=2))
+    return path
 
 
 @pytest.fixture

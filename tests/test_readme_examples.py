@@ -244,6 +244,20 @@ class TestBenchmarkSuites:
         assert "passed" in result.output
 
 
+class TestCustomRules:
+    """bagx eval recording.db3 --rules rules.json → custom domain checks."""
+
+    def test_eval_with_custom_rules(self, custom_rule_bag: Path, custom_rules_file: Path):
+        result = runner.invoke(
+            app,
+            ["eval", str(custom_rule_bag), "--rules", str(custom_rules_file)],
+        )
+
+        assert result.exit_code == 0
+        assert "WarehouseBot custom rules matched" in result.output
+        assert "Wheel odometry" in result.output
+
+
 # ── Example 8: Asking questions (bagx ask) ──
 
 

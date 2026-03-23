@@ -242,6 +242,23 @@ class TestFrameworkDetection:
         assert report.domain_score is not None
         assert report.domain_score >= 90
 
+    def test_custom_rules_detect_custom_domain(self, custom_rule_bag: Path, custom_rules_file: Path):
+        report = evaluate_bag(str(custom_rule_bag), custom_rules_path=str(custom_rules_file))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+        custom_domains = report.to_dict()["custom_domains"]
+
+        assert report.custom_domains
+        assert report.custom_domains[0].name == "WarehouseBot"
+        assert custom_domains[0]["name"] == "WarehouseBot"
+        assert all("[" not in item for item in custom_domains[0]["recommendations"])
+        assert "WarehouseBot custom rules matched" in recommendations
+        assert "Wheel odometry (/warehouse_bot/wheel_odom) at 50Hz" in recommendations
+        assert "Controller command (/warehouse_bot/controller_cmd) at 25Hz" in recommendations
+        assert "Mission result (/warehouse_bot/mission/result) recorded" in recommendations
+        assert "Pipeline mission path → controller" in recommendations
+        assert "No GNSS data" not in recommendations
+        assert "No IMU data" not in recommendations
+
 
 class TestEvalConfig:
     """Test EvalConfig customization."""

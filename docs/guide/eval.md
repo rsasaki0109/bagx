@@ -7,6 +7,7 @@ Evaluate a single bag and produce a composite quality score (0–100).
 ```bash
 bagx eval recording.db3
 bagx eval recording.db3 --json report.json
+bagx eval recording.db3 --rules examples/custom_rules/warehouse_bot.json
 ```
 
 ## What it measures
@@ -33,6 +34,19 @@ bagx eval recording.db3 --json report.json
 
 ### Overall Score
 Weighted average of available component scores (GNSS, IMU, Sync).
+
+## Custom message stacks
+
+If your bag uses custom messages, you can still layer in domain-specific checks with `--rules`.
+
+`bagx` does not need to decode those payloads for this mode. The rule engine works from:
+
+- topic names
+- topic types
+- message rates
+- timestamp-based latency between topics
+
+See [custom-rules — Custom Message Rules](custom-rules.md) for the rule format.
 
 ## Customizing thresholds
 

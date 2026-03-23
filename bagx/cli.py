@@ -111,6 +111,9 @@ def benchmark(
     json_output: Optional[str] = typer.Option(
         None, "--json", "-j", help="Output JSON report to file"
     ),
+    rules_path: Optional[str] = typer.Option(
+        None, "--rules", help="Optional custom rule JSON applied to all benchmark cases"
+    ),
     case: Optional[list[str]] = typer.Option(
         None, "--case", help="Run only the named benchmark case(s)"
     ),
@@ -126,6 +129,7 @@ def benchmark(
             manifest,
             fail_on_missing=fail_on_missing,
             selected_cases=case,
+            rules_path=rules_path,
         )
         print_benchmark_report(report, console)
         if json_output:
@@ -150,6 +154,9 @@ def eval(
     json_output: Optional[str] = typer.Option(
         None, "--json", "-j", help="Output JSON report to file"
     ),
+    rules_path: Optional[str] = typer.Option(
+        None, "--rules", help="Optional custom rule JSON for custom topic/message conventions"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -159,7 +166,7 @@ def eval(
     from bagx.eval import evaluate_bag, print_eval_report
 
     try:
-        report = evaluate_bag(bag)
+        report = evaluate_bag(bag, custom_rules_path=rules_path)
         print_eval_report(report, console)
         if json_output:
             with open(json_output, "w") as f:
