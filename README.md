@@ -8,28 +8,12 @@
 **One command to know if your rosbag is ready for SLAM.**
 
 ```bash
-$ pip install bagx
-$ bagx eval recording.db3
+pip install bagx && bagx eval recording.db3
 ```
 
-```
-IMU Quality
-┃ Accel Noise (xyz)    ┃       0.0114, 0.0224, 0.0141 ┃
-┃ Gyro Noise (xyz)     ┃ 0.010617, 0.007978, 0.004494 ┃
-┃ Score                ┃                     97.3/100  ┃
-
-Topic Sync Quality
-┃ /livox/imu ↔ /livox/lidar ┃  25.0 ms ┃  50.9 ms ┃
-┃ Score                      ┃  70.0/100 ┃          ┃
-
-Overall Score: 83.7/100
-
-Recommendations:
-  ✔ IMU accel noise 0.016 m/s² — set imu_acc_noise_density to 0.016
-  ✔ IMU gyro noise 0.0077 rad/s — set imu_gyro_noise_density to 0.0077
-  ⚠ LiDAR↔IMU sync delay 25ms — enable per-point deskew in SLAM
-  ℹ No GNSS — ground truth needs motion capture or total station
-```
+<p align="center">
+  <img src="docs/eval_demo.svg" alt="bagx eval output" width="700">
+</p>
 
 **You get SLAM-ready parameter values, not just scores.**
 
