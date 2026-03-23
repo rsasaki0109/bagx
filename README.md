@@ -5,7 +5,7 @@
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rsasaki0109.github.io/bagx/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**One command to check if your rosbag data is ready — for SLAM, Nav2, Autoware, MoveIt, or perception.**
+**One command to tell whether your rosbag is usable — for SLAM, perception, planning, and control.**
 
 ```bash
 pip install bagx
@@ -16,24 +16,22 @@ bagx eval your_bag.db3
   <img src="docs/eval_demo.svg" alt="bagx eval output" width="700">
 </p>
 
-bagx analyzes your rosbag and gives you:
-- **Exact IMU noise values** to paste into your SLAM config
-- **Sync delay warnings** so you know when to enable deskew
-- **"Use LiDAR-only"** when your IMU is too noisy for LIO
-- **Framework-aware checks** for Nav2, Autoware, MoveIt, RGB-D robot arms, and camera-only perception bags
-- **Manifest-driven benchmark suites** you can rerun across public and private bags
+bagx analyzes your rosbag and tells you:
+- **SLAM readiness**: IMU noise, GNSS quality, LiDAR↔IMU sync, and whether LIO is a bad idea
+- **Navigation/control readiness**: odom / scan / costmap rates, goal observability, and `plan → cmd_vel` latency
+- **Perception dataset readiness**: RGB / depth / infra rates, camera calibration presence, and reusable export structure
+- **Manipulation readiness**: joint-state rate, planner visibility, and `planned_path → arm execution` latency
+- **Repeatability**: manifest-driven benchmark suites you can rerun across public and private bags
 
-## The problem
+## What bagx answers
 
-You recorded a rosbag. You run SLAM. It diverges. Now you spend hours asking:
+When a rosbag is not for SLAM, the value is usually one of these:
 
-- *"Is my IMU noise too high for LIO?"* → `bagx eval` tells you
-- *"What noise value should I set in the SLAM config?"* → bagx gives you the exact number
-- *"Are my LiDAR and IMU actually synchronized?"* → `bagx sync` shows the delay
-- *"Where did the data quality drop?"* → `bagx anomaly` pinpoints the exact timestamp
-- *"Which of my 10 bags is the best for benchmarking?"* → `bagx batch eval` ranks them all
-- *"Is my odometry fast enough for Nav2?"* → bagx checks rate and warns if too slow
-- *"Are all Autoware sensing topics alive?"* → bagx verifies camera, LiDAR, GNSS rates
+- *"Can I trust this bag for navigation debugging?"* → `bagx eval` checks odom, scan, costmap, plan, and control-loop timing
+- *"Did my Autoware recording include the sensing and vehicle topics I actually need?"* → bagx verifies camera, LiDAR, GNSS, `/vehicle/status/*`, and whether planning/control topics are present
+- *"Is this RGB-D bag usable for perception work, or did I forget camera_info / depth / infra?"* → bagx flags stream rates, calibration topics, and RGB-D coverage
+- *"Did MoveIt record just planning, or also execution?"* → bagx checks `joint_states`, action topics, and controller activity
+- *"Which of these bags should become my regression benchmark?"* → `bagx benchmark` and `bagx batch eval` make that repeatable
 
 ## Example: catching a real problem
 
@@ -50,6 +48,26 @@ Recommendations:
 ```
 
 Without bagx, you'd discover these issues *after* hours of failed SLAM runs.
+
+For non-SLAM bags, the same workflow answers different questions:
+
+```
+$ bagx eval nav2_robot.db3
+
+Recommendations:
+  Nav2 topics detected
+    ✔ Odometry (/robot/odom) at 50Hz — good for Nav2
+    ✔ LaserScan (/robot/scan) at 12Hz — good for costmap
+    ✔ Pipeline plan → cmd_vel onset: 11ms median, 76ms P95 (3 samples)
+
+$ bagx eval r2b_galileo2
+
+Recommendations:
+  Perception topics detected
+    ✔ Depth image (/camera/realsense_splitter_node/output/depth) at 30Hz — good for RGB-D perception
+    ✔ Infra stereo streams are both recorded — depth debugging is possible
+    ✔ Camera calibration topics are recorded — exported perception data is reusable
+```
 
 ## Install
 
@@ -73,14 +91,17 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | `bagx ask bag.db3 "question"` | Ask questions via LLM |
 | `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 
-## Tested on public datasets
+## Representative results
 
-| Dataset | IMU | Sync | Score | Insight |
-|---------|-----|------|-------|---------|
-| Newer College | 84 | 100 | **92** | Best data, ideal for SLAM benchmarking |
-| Livox MID-360 | 97 | 70 | **84** | Great IMU, but 25ms sync — needs deskew |
-| NTU VIRAL | 60 | 100 | **80** | IMU too noisy for LIO, use LiDAR-only |
-| Ouster OS0-32 | 80 | 74 | **77** | 50Hz IMU too slow, add external IMU |
+| Dataset | Domain | Score | What bagx tells you |
+|---------|--------|-------|---------------------|
+| Newer College | SLAM | **92** | LiDAR+IMU quality is strong enough for SLAM benchmarking |
+| Ouster OS0-32 | SLAM | **77** | IMU is too slow and sync is weak, so deskew / sensor changes are needed |
+| `driving_20_kmh_2022_06_10-16_01_55_compressed` | Autoware sensing/control | **99** | LiDAR packets and `/vehicle/status/velocity_status` are present and healthy |
+| `r2b_galileo2` | Camera perception | **97.5** | RGB-D + infra + camera_info are all recorded, so the bag is reusable for perception work |
+| `r2b_robotarm` | Manipulation perception | **96.0** | RGB-D + `joint_states` make it suitable for robot-arm perception benchmarking |
+| `nav2-deep-final-20260324-185315` | Navigation/control | **100** | Nav2 plan, costmap, and `plan → cmd_vel` loop are all observable |
+| `moveit-exec-final-20260324-185315` | Motion planning/control | **100** | MoveIt planning and arm execution are both recorded end-to-end |
 
 ## Auto-detects your framework
 
