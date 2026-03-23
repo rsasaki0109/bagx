@@ -822,7 +822,7 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
     autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
     autoware_topics = [t for t in topic_names if any(t.startswith(p) for p in autoware_prefixes)]
 
-    if len(autoware_topics) >= 3:
+    if len(autoware_topics) >= 1:
         recs.append("[bold cyan]Autoware topics detected[/bold cyan]")
 
         # Camera check
