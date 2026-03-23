@@ -5,7 +5,7 @@
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rsasaki0109.github.io/bagx/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Stop guessing why your SLAM diverges. One command finds the problem.**
+**One command to check if your rosbag data is ready — for SLAM, Nav2, Autoware, or MoveIt.**
 
 ```bash
 pip install bagx
@@ -30,6 +30,8 @@ You recorded a rosbag. You run SLAM. It diverges. Now you spend hours asking:
 - *"Are my LiDAR and IMU actually synchronized?"* → `bagx sync` shows the delay
 - *"Where did the data quality drop?"* → `bagx anomaly` pinpoints the exact timestamp
 - *"Which of my 10 bags is the best for benchmarking?"* → `bagx batch eval` ranks them all
+- *"Is my odometry fast enough for Nav2?"* → bagx checks rate and warns if too slow
+- *"Are all Autoware sensing topics alive?"* → bagx verifies camera, LiDAR, GNSS rates
 
 ## Example: catching a real problem
 
@@ -59,7 +61,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 
 | Command | One-liner |
 |---------|-----------|
-| `bagx eval bag.db3` | Is this bag ready for SLAM? What parameters should I use? |
+| `bagx eval bag.db3` | Is this bag ready? Auto-detects SLAM / Nav2 / Autoware / MoveIt |
 | `bagx compare A.db3 B.db3` | Which sensor config is better? |
 | `bagx sync bag.db3 /imu /lidar` | Are my sensors synchronized? |
 | `bagx anomaly bag.db3` | Where did sensor quality drop? |
@@ -76,6 +78,28 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | Livox MID-360 | 97 | 70 | **84** | Great IMU, but 25ms sync — needs deskew |
 | NTU VIRAL | 60 | 100 | **80** | IMU too noisy for LIO, use LiDAR-only |
 | Ouster OS0-32 | 80 | 74 | **77** | 50Hz IMU too slow, add external IMU |
+
+## Auto-detects your framework
+
+bagx recognizes topic patterns and gives framework-specific advice:
+
+```
+$ bagx eval nav2_robot.db3
+Nav2 topics detected
+  ✔ Odometry (/odom) at 50Hz — good for Nav2
+  ⚠ LaserScan (/scan) at 5Hz — 10Hz+ recommended for costmap updates
+  ⚠ cmd_vel at 8Hz — control loop may be too slow
+
+$ bagx eval autoware_vehicle.db3
+Autoware topics detected
+  ✔ LiDAR (/sensing/lidar/points) at 10Hz
+  ✔ Camera (/sensing/camera/image) at 30Hz
+  ✔ GNSS (/sensing/gnss/fix)
+
+$ bagx eval moveit_arm.db3
+MoveIt topics detected
+  ✔ JointState (/joint_states) at 500Hz — good for motion planning
+```
 
 ## Links
 

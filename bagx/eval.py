@@ -96,6 +96,7 @@ class EvalReport:
     imu_topic: str = ""
     sync: SyncMetrics | None = None
     overall_score: float = 0.0
+    topic_info: dict = field(default_factory=dict)  # {name: {"type": str, "count": int, "rate_hz": float}}
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -189,6 +190,21 @@ def evaluate_bag(
         report.imu = best_imu
     if report.imu is None:
         logger.info("No IMU topics found in %s", bag_path)
+
+    # Build topic info with rates for domain detection
+    for name, info in summary.topics.items():
+        ts_list = topic_timestamps.get(name, [])
+        rate_hz = 0.0
+        if len(ts_list) >= 2:
+            ts_sorted = sorted(ts_list)
+            dur = (ts_sorted[-1] - ts_sorted[0]) / 1e9
+            if dur > 0:
+                rate_hz = (len(ts_list) - 1) / dur
+        report.topic_info[name] = {
+            "type": info.type,
+            "count": info.count,
+            "rate_hz": round(rate_hz, 1),
+        }
 
     # Evaluate sync
     sync_topics = [t for t in all_topics if len(topic_timestamps.get(t, [])) > 10]
@@ -729,5 +745,103 @@ def generate_recommendations(report: EvalReport) -> list[str]:
             recs.append(
                 f"[yellow]:warning:[/yellow] {t1} \u2194 {t2} sync delay {worst_delay:.0f}ms — enable per-point deskew / timestamp compensation in SLAM"
             )
+
+    # --- Domain-specific recommendations ---
+    recs.extend(_detect_domain_recommendations(report))
+
+    return recs
+
+
+def _detect_domain_recommendations(report: EvalReport) -> list[str]:
+    """Detect ROS2 framework and generate domain-specific recommendations."""
+    recs: list[str] = []
+    topics = report.topic_info
+    if not topics:
+        return recs
+
+    topic_names = set(topics.keys())
+    topic_types = {t: info["type"] for t, info in topics.items()}
+
+    # --- Nav2 detection ---
+    nav2_indicators = {"/cmd_vel", "/odom", "/scan", "/local_costmap", "/global_costmap",
+                       "/plan", "/amcl_pose", "/map", "/behavior_tree_log"}
+    nav2_found = topic_names & nav2_indicators
+    nav2_type_match = any("LaserScan" in t for t in topic_types.values())
+
+    if len(nav2_found) >= 2 or (nav2_type_match and "/odom" in topic_names):
+        recs.append("[bold cyan]Nav2 topics detected[/bold cyan]")
+
+        # Odom check
+        for name in topic_names:
+            if "odom" in name.lower() and name in topics:
+                rate = topics[name]["rate_hz"]
+                if rate > 0:
+                    if rate >= 20:
+                        recs.append(f"  [green]:heavy_check_mark:[/green] Odometry ({name}) at {rate:.0f}Hz — good for Nav2")
+                    else:
+                        recs.append(f"  [yellow]:warning:[/yellow] Odometry ({name}) at {rate:.0f}Hz — Nav2 works best at 20Hz+")
+
+        # LaserScan check
+        for name, ttype in topic_types.items():
+            if "LaserScan" in ttype and name in topics:
+                rate = topics[name]["rate_hz"]
+                if rate > 0:
+                    if rate >= 10:
+                        recs.append(f"  [green]:heavy_check_mark:[/green] LaserScan ({name}) at {rate:.0f}Hz — good for costmap")
+                    else:
+                        recs.append(f"  [yellow]:warning:[/yellow] LaserScan ({name}) at {rate:.0f}Hz — 10Hz+ recommended for costmap updates")
+
+        # cmd_vel check
+        if "/cmd_vel" in topic_names:
+            rate = topics["/cmd_vel"]["rate_hz"]
+            if rate > 0 and rate < 10:
+                recs.append(f"  [yellow]:warning:[/yellow] cmd_vel at {rate:.0f}Hz — control loop may be too slow")
+
+    # --- Autoware detection ---
+    autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
+    autoware_topics = [t for t in topic_names if any(t.startswith(p) for p in autoware_prefixes)]
+
+    if len(autoware_topics) >= 3:
+        recs.append("[bold cyan]Autoware topics detected[/bold cyan]")
+
+        # Camera check
+        for name, ttype in topic_types.items():
+            if ("Image" in ttype or "CompressedImage" in ttype) and "sensing" in name.lower():
+                rate = topics[name]["rate_hz"]
+                if rate > 0:
+                    if rate >= 15:
+                        recs.append(f"  [green]:heavy_check_mark:[/green] Camera ({name}) at {rate:.0f}Hz")
+                    else:
+                        recs.append(f"  [yellow]:warning:[/yellow] Camera ({name}) at {rate:.0f}Hz — 15Hz+ recommended for perception")
+
+        # LiDAR check under /sensing
+        for name, ttype in topic_types.items():
+            if "PointCloud2" in ttype and "sensing" in name.lower():
+                rate = topics[name]["rate_hz"]
+                if rate > 0:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] LiDAR ({name}) at {rate:.0f}Hz")
+
+        # GNSS under /sensing
+        for name, ttype in topic_types.items():
+            if "NavSatFix" in ttype and "sensing" in name.lower():
+                recs.append(f"  [green]:heavy_check_mark:[/green] GNSS ({name})")
+
+    # --- MoveIt detection ---
+    moveit_indicators = {"/joint_states", "/display_planned_path", "/planning_scene",
+                         "/move_group/result", "/execute_trajectory"}
+    moveit_type_match = any("JointState" in t for t in topic_types.values())
+    moveit_found = topic_names & moveit_indicators
+
+    if len(moveit_found) >= 2 or (moveit_type_match and len(moveit_found) >= 1):
+        recs.append("[bold cyan]MoveIt topics detected[/bold cyan]")
+
+        for name, ttype in topic_types.items():
+            if "JointState" in ttype and name in topics:
+                rate = topics[name]["rate_hz"]
+                if rate > 0:
+                    if rate >= 100:
+                        recs.append(f"  [green]:heavy_check_mark:[/green] JointState ({name}) at {rate:.0f}Hz — good for motion planning")
+                    else:
+                        recs.append(f"  [yellow]:warning:[/yellow] JointState ({name}) at {rate:.0f}Hz — 100Hz+ recommended for smooth trajectories")
 
     return recs
