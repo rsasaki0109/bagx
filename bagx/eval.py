@@ -796,16 +796,17 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
     if not topics:
         return recs
 
+    domains = _detect_domain_names(topics)
     topic_types = {t: info["type"] for t, info in topics.items()}
     image_topics = _select_topics(
         topics,
         type_markers=("image", "compressedimage"),
-        contains=("image",),
     )
     color_image_topics = [
         name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
     ]
     depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
+    infra_image_topics = [name for name in image_topics if "infra" in name.lower()]
     camera_info_topics = _select_topics(
         topics,
         type_markers=("camerainfo",),
@@ -815,6 +816,7 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         name for name in camera_info_topics if "depth" not in name.lower() and "infra" not in name.lower()
     ]
     depth_info_topics = [name for name in camera_info_topics if "depth" in name.lower()]
+    infra_info_topics = [name for name in camera_info_topics if "infra" in name.lower()]
 
     odom_topics = _select_topics(
         topics,
@@ -1221,7 +1223,7 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
             )
 
     robot_arm_evidence = bool(joint_state_topics and (color_image_topics or depth_image_topics))
-    if robot_arm_evidence and "MoveIt" not in _detect_domain_names(topics):
+    if robot_arm_evidence and "MoveIt" not in domains:
         recs.append("[bold cyan]Robot arm perception/manipulation topics detected[/bold cyan]")
 
         for name in joint_state_topics:
@@ -1267,6 +1269,62 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
                 "  [green]:heavy_check_mark:[/green] RGB and depth streams are both recorded — suitable for open-loop manipulation perception benchmarking"
             )
         if color_info_topics or depth_info_topics:
+            recs.append(
+                "  [green]:heavy_check_mark:[/green] Camera calibration topics are recorded — exported perception data is reusable"
+            )
+
+    perception_evidence = bool(camera_info_topics and (color_image_topics or depth_image_topics or infra_image_topics))
+    if perception_evidence and not ({"Autoware", "MoveIt", "RobotArm"} & domains):
+        recs.append("[bold cyan]Perception topics detected[/bold cyan]")
+
+        for name in color_image_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                rate_label = _format_rate_hz(rate)
+                if rate >= 15:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] RGB image ({name}) at {rate_label}Hz — good for camera-based perception"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] RGB image ({name}) at {rate_label}Hz — 15Hz+ recommended for camera-based perception"
+                    )
+
+        for name in depth_image_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                rate_label = _format_rate_hz(rate)
+                if rate >= 15:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] Depth image ({name}) at {rate_label}Hz — good for RGB-D perception"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] Depth image ({name}) at {rate_label}Hz — 15Hz+ recommended for RGB-D perception"
+                    )
+
+        for name in infra_image_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                rate_label = _format_rate_hz(rate)
+                if rate >= 15:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] Infra image ({name}) at {rate_label}Hz — good for depth/perception debugging"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] Infra image ({name}) at {rate_label}Hz — 15Hz+ recommended for stereo/depth debugging"
+                    )
+
+        if color_image_topics and depth_image_topics:
+            recs.append(
+                "  [green]:heavy_check_mark:[/green] RGB and depth streams are both recorded — suitable for RGB-D perception benchmarking"
+            )
+        if len(infra_image_topics) >= 2:
+            recs.append(
+                "  [green]:heavy_check_mark:[/green] Infra stereo streams are both recorded — depth debugging is possible"
+            )
+        if color_info_topics or depth_info_topics or infra_info_topics:
             recs.append(
                 "  [green]:heavy_check_mark:[/green] Camera calibration topics are recorded — exported perception data is reusable"
             )
@@ -1399,14 +1457,27 @@ def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
     image_topics = _select_topics(
         topics,
         type_markers=("image", "compressedimage"),
-        contains=("image",),
     )
     color_image_topics = [
         name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
     ]
     depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
+    infra_image_topics = [name for name in image_topics if "infra" in name.lower()]
     if joint_state_topics and (color_image_topics or depth_image_topics):
         names.add("RobotArm")
+
+    camera_info_topics = _select_topics(
+        topics,
+        type_markers=("camerainfo",),
+        contains=("camera_info",),
+    )
+    if (
+        camera_info_topics
+        and (color_image_topics or depth_image_topics or infra_image_topics)
+        and "RobotArm" not in names
+        and "Autoware" not in names
+    ):
+        names.add("Perception")
 
     return names
 
@@ -1527,7 +1598,6 @@ def _compute_domain_score(report: EvalReport) -> float | None:
         image_topics = _select_topics(
             topics,
             type_markers=("image", "compressedimage"),
-            contains=("image",),
         )
         color_image_topics = [
             name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
@@ -1550,6 +1620,35 @@ def _compute_domain_score(report: EvalReport) -> float | None:
             robot_arm_scores.append(100.0)
         if robot_arm_scores:
             scores.append(float(np.mean(robot_arm_scores)))
+
+    if "Perception" in domains:
+        image_topics = _select_topics(
+            topics,
+            type_markers=("image", "compressedimage"),
+        )
+        color_image_topics = [
+            name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
+        ]
+        depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
+        infra_image_topics = [name for name in image_topics if "infra" in name.lower()]
+        camera_info_topics = _select_topics(
+            topics,
+            type_markers=("camerainfo",),
+            contains=("camera_info",),
+        )
+
+        perception_scores = []
+        perception_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in color_image_topics)
+        perception_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in depth_image_topics)
+        perception_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in infra_image_topics)
+        if color_image_topics and depth_image_topics:
+            perception_scores.append(100.0)
+        if len(infra_image_topics) >= 2:
+            perception_scores.append(100.0)
+        if camera_info_topics:
+            perception_scores.append(100.0)
+        if perception_scores:
+            scores.append(float(np.mean(perception_scores)))
 
     if "MoveIt" in domains:
         joint_state_topics = _select_topics(

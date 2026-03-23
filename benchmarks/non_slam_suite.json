@@ -1,0 +1,68 @@
+{
+  "suite_name": "non-slam-dogfood",
+  "cases": [
+    {
+      "name": "nvidia-r2b-galileo2",
+      "bag_path": "${BAGX_REALBAGS}/r2b_galileo2",
+      "report_type": "eval",
+      "expect": {
+        "required_domains": ["Perception"],
+        "required_recommendations": [
+          "Perception topics detected",
+          "Camera calibration topics are recorded"
+        ],
+        "forbidden_recommendations": [
+          "No GNSS data",
+          "No IMU data"
+        ],
+        "min_domain_score": 90
+      }
+    },
+    {
+      "name": "nvidia-r2b-robotarm",
+      "bag_path": "${BAGX_REALBAGS}/r2b_robotarm",
+      "report_type": "eval",
+      "expect": {
+        "required_domains": ["RobotArm"],
+        "required_recommendations": [
+          "Robot arm perception/manipulation topics detected"
+        ],
+        "min_domain_score": 90
+      }
+    },
+    {
+      "name": "nav2-dogfood",
+      "bag_path": "../.cache/dogfood/nav2-deep-final-20260324-185315",
+      "report_type": "eval",
+      "expect": {
+        "required_domains": ["Nav2"],
+        "required_recommendations": [
+          "Nav2 topics detected",
+          "NavigateToPose status",
+          "plan → cmd_vel onset"
+        ],
+        "min_domain_score": 95,
+        "min_topic_rates": {
+          "/scan": 10
+        }
+      }
+    },
+    {
+      "name": "moveit-dogfood",
+      "bag_path": "../.cache/dogfood/moveit-exec-final-20260324-185315",
+      "report_type": "eval",
+      "expect": {
+        "required_domains": ["MoveIt"],
+        "required_recommendations": [
+          "MoveIt topics detected",
+          "Joint trajectory controller activity recorded",
+          "planned_path → arm execution"
+        ],
+        "min_domain_score": 95,
+        "min_topic_rates": {
+          "/joint_states": 100
+        }
+      }
+    }
+  ]
+}

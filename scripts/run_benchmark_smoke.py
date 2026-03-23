@@ -111,6 +111,43 @@ def _create_robotarm_bag(path: Path) -> Path:
     return _create_db3(path, topics, messages)
 
 
+def _create_perception_bag(path: Path) -> Path:
+    from tests.conftest import _create_db3, build_stub_cdr
+
+    topics = [
+        {"name": "/camera/color/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/color/image_raw", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera/depth/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/infra1/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/infra2/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera/realsense_splitter_node/output/depth", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera/realsense_splitter_node/output/infra1", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera/realsense_splitter_node/output/infra2", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/tf_static", "type": "tf2_msgs/msg/TFMessage", "format": "cdr"},
+    ]
+    messages: list[dict] = []
+    base_ns = 1_700_001_200_000_000_000
+
+    for i in range(18):
+        ts = base_ns + i * 66_666_666  # ~15Hz
+        messages.append({"topic": "/camera/color/image_raw", "timestamp_ns": ts, "data": build_stub_cdr()})
+        messages.append({"topic": "/camera/color/camera_info", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+    for i in range(36):
+        ts = base_ns + i * 33_333_333 + 8_000_000  # ~30Hz
+        messages.append({"topic": "/camera/realsense_splitter_node/output/depth", "timestamp_ns": ts, "data": build_stub_cdr()})
+        messages.append({"topic": "/camera/depth/camera_info", "timestamp_ns": ts, "data": build_stub_cdr()})
+        messages.append({"topic": "/camera/realsense_splitter_node/output/infra1", "timestamp_ns": ts + 4_000_000, "data": build_stub_cdr()})
+        messages.append({"topic": "/camera/infra1/camera_info", "timestamp_ns": ts + 4_000_000, "data": build_stub_cdr()})
+        messages.append({"topic": "/camera/realsense_splitter_node/output/infra2", "timestamp_ns": ts + 5_000_000, "data": build_stub_cdr()})
+        messages.append({"topic": "/camera/infra2/camera_info", "timestamp_ns": ts + 5_000_000, "data": build_stub_cdr()})
+
+    messages.append({"topic": "/tf_static", "timestamp_ns": base_ns, "data": build_stub_cdr()})
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(path, topics, messages)
+
+
 def main() -> None:
     from bagx.contracts import REPORT_SCHEMA_VERSION
 
@@ -118,6 +155,7 @@ def main() -> None:
         tmp_path = Path(tmp_dir)
         nav2_bag = _create_nav2_bag(tmp_path / "nav2.db3")
         robotarm_bag = _create_robotarm_bag(tmp_path / "robotarm.db3")
+        perception_bag = _create_perception_bag(tmp_path / "perception.db3")
 
         manifest_path = tmp_path / "smoke_suite.json"
         report_path = tmp_path / "benchmark-report.json"
@@ -140,6 +178,16 @@ def main() -> None:
                         "required_domains": ["RobotArm"],
                         "required_recommendations": ["Robot arm perception/manipulation topics detected"],
                         "forbidden_recommendations": ["No GNSS data"],
+                        "min_domain_score": 90,
+                    },
+                },
+                {
+                    "name": "perception-smoke",
+                    "bag_path": str(perception_bag),
+                    "expect": {
+                        "required_domains": ["Perception"],
+                        "required_recommendations": ["Perception topics detected"],
+                        "forbidden_recommendations": ["No GNSS data", "No IMU data"],
                         "min_domain_score": 90,
                     },
                 },
@@ -167,7 +215,7 @@ def main() -> None:
             raise SystemExit(f"unexpected schema_version: {data['schema_version']}")
         if data["report_type"] != "benchmark_suite":
             raise SystemExit(f"unexpected report_type: {data['report_type']}")
-        if data["failed_cases"] != 0 or data["passed_cases"] != 2:
+        if data["failed_cases"] != 0 or data["passed_cases"] != 3:
             raise SystemExit(f"unexpected benchmark result: {data}")
 
 

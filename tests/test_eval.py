@@ -198,6 +198,25 @@ class TestFrameworkDetection:
         assert "/camera_1/color/camera_info" not in sync_pairs
         assert "/camera_1/aligned_depth_to_color/camera_info" not in sync_pairs
 
+    def test_perception_bag_uses_domain_specific_recommendations(self, perception_bag: Path):
+        report = evaluate_bag(str(perception_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Perception topics detected" in recommendations
+        assert "RGB image (/camera/color/image_raw)" in recommendations
+        assert "Depth image (/camera/realsense_splitter_node/output/depth)" in recommendations
+        assert "Infra image (/camera/realsense_splitter_node/output/infra1)" in recommendations
+        assert "Infra stereo streams are both recorded" in recommendations
+        assert "Camera calibration topics are recorded" in recommendations
+        assert "No GNSS data" not in recommendations
+        assert "No IMU data" not in recommendations
+
+    def test_perception_bag_has_domain_score(self, perception_bag: Path):
+        report = evaluate_bag(str(perception_bag))
+
+        assert report.domain_score is not None
+        assert report.domain_score >= 90
+
 
 class TestEvalConfig:
     """Test EvalConfig customization."""
