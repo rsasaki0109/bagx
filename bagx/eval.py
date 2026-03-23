@@ -913,17 +913,17 @@ def _add_pipeline_latency_recs(
         arr_in = np.array(sorted(ts_in), dtype=np.int64)
         arr_out = np.array(sorted(ts_out), dtype=np.int64)
 
-        # For each output message, find the most recent input message BEFORE it
-        # The difference is the processing latency
+        # For each output message, find the most recent input BEFORE it
+        # using binary search (j must NOT carry over between iterations)
         latencies_ms = []
-        j = 0
         for t_out in arr_out:
-            # Advance j to the last input that's <= t_out
-            while j < len(arr_in) - 1 and arr_in[j + 1] <= t_out:
-                j += 1
-            if j < len(arr_in) and arr_in[j] <= t_out:
-                latency = (t_out - arr_in[j]) / 1e6  # ns to ms
-                latencies_ms.append(latency)
+            # Binary search: find the rightmost input <= t_out
+            idx = int(np.searchsorted(arr_in, t_out, side="right")) - 1
+            if 0 <= idx < len(arr_in):
+                latency = (t_out - arr_in[idx]) / 1e6  # ns to ms
+                # Only count if the input is reasonably recent (< 2x output interval)
+                if latency >= 0:
+                    latencies_ms.append(latency)
 
         if not latencies_ms:
             continue
