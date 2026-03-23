@@ -599,6 +599,102 @@ def autoware_sensing_only_bag(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def autoware_vehicle_status_bag(tmp_path: Path) -> Path:
+    """Create an Autoware-style bag with packet LiDAR and vehicle status telemetry."""
+    topics = [
+        {"name": "/sensing/lidar/front/velodyne_packets", "type": "velodyne_msgs/msg/VelodyneScan", "format": "cdr"},
+        {"name": "/sensing/lidar/left/velodyne_packets", "type": "velodyne_msgs/msg/VelodyneScan", "format": "cdr"},
+        {"name": "/vehicle/status/velocity_status", "type": "autoware_auto_vehicle_msgs/msg/VelocityReport", "format": "cdr"},
+    ]
+    messages = []
+    base_ns = 1_700_000_175_000_000_000
+
+    for i in range(20):
+        lidar_ts = base_ns + i * 100_000_000  # 10Hz
+        messages.append({
+            "topic": "/sensing/lidar/front/velodyne_packets",
+            "timestamp_ns": lidar_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/sensing/lidar/left/velodyne_packets",
+            "timestamp_ns": lidar_ts + 5_000_000,
+            "data": build_stub_cdr(),
+        })
+
+    for i in range(200):
+        status_ts = base_ns + i * 10_000_000  # 100Hz
+        messages.append({
+            "topic": "/vehicle/status/velocity_status",
+            "timestamp_ns": status_ts,
+            "data": build_stub_cdr(),
+        })
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(tmp_path / "autoware_vehicle_status.db3", topics, messages)
+
+
+@pytest.fixture
+def robotarm_bag(tmp_path: Path) -> Path:
+    """Create a robot-arm perception bag with RGB-D images and joint states."""
+    topics = [
+        {"name": "/camera_1/color/image_raw", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera_1/color/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/camera_1/aligned_depth_to_color/image_raw", "type": "sensor_msgs/msg/Image", "format": "cdr"},
+        {"name": "/camera_1/aligned_depth_to_color/camera_info", "type": "sensor_msgs/msg/CameraInfo", "format": "cdr"},
+        {"name": "/joint_states", "type": "sensor_msgs/msg/JointState", "format": "cdr"},
+        {"name": "/tf", "type": "tf2_msgs/msg/TFMessage", "format": "cdr"},
+    ]
+    messages = []
+    base_ns = 1_700_000_190_000_000_000
+
+    for i in range(450):
+        joint_ts = base_ns + i * 5_000_000  # 200Hz
+        messages.append({
+            "topic": "/joint_states",
+            "timestamp_ns": joint_ts,
+            "data": build_stub_cdr(),
+        })
+
+    for i in range(45):
+        color_ts = base_ns + i * 33_333_333  # ~30Hz
+        messages.append({
+            "topic": "/camera_1/color/image_raw",
+            "timestamp_ns": color_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera_1/color/camera_info",
+            "timestamp_ns": color_ts,
+            "data": build_stub_cdr(),
+        })
+
+    for i in range(22):
+        depth_ts = base_ns + i * 66_666_666 + 12_000_000  # ~15Hz with offset from RGB
+        messages.append({
+            "topic": "/camera_1/aligned_depth_to_color/image_raw",
+            "timestamp_ns": depth_ts,
+            "data": build_stub_cdr(),
+        })
+        messages.append({
+            "topic": "/camera_1/aligned_depth_to_color/camera_info",
+            "timestamp_ns": depth_ts,
+            "data": build_stub_cdr(),
+        })
+
+    for i in range(30):
+        tf_ts = base_ns + i * 50_000_000
+        messages.append({
+            "topic": "/tf",
+            "timestamp_ns": tf_ts,
+            "data": build_stub_cdr(),
+        })
+
+    messages.sort(key=lambda m: m["timestamp_ns"])
+    return _create_db3(tmp_path / "robotarm.db3", topics, messages)
+
+
+@pytest.fixture
 def moveit_bag(tmp_path: Path) -> Path:
     """Create a MoveIt-style bag with namespaced joint_states, planning, and execution topics."""
     topics = [

@@ -11,6 +11,7 @@ class TestSyncCandidate:
     def test_control_and_meta_topics_are_excluded(self):
         assert not is_sync_candidate("/clock", "rosgraph_msgs/msg/Clock")
         assert not is_sync_candidate("/controller_server/cmd_vel", "geometry_msgs/msg/TwistStamped")
+        assert not is_sync_candidate("/camera/color/camera_info", "sensor_msgs/msg/CameraInfo")
         assert not is_sync_candidate(
             "/navigate_to_pose/_action/status",
             "action_msgs/msg/GoalStatusArray",

@@ -150,6 +150,15 @@ class TestFrameworkDetection:
         assert "Autoware topics detected" in recommendations
         assert "Sensing/localization-only Autoware bag" in recommendations
 
+    def test_autoware_vehicle_status_and_packet_lidar_detected(self, autoware_vehicle_status_bag: Path):
+        report = evaluate_bag(str(autoware_vehicle_status_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Autoware topics detected" in recommendations
+        assert "LiDAR (/sensing/lidar/front/velodyne_packets) at 10Hz" in recommendations
+        assert "Vehicle status (/vehicle/status/velocity_status) at 100Hz" in recommendations
+        assert "Sensing/localization-only Autoware bag" in recommendations
+
     def test_moveit_topics_detected(self, moveit_bag: Path):
         report = evaluate_bag(str(moveit_bag))
         recommendations = "\n".join(report.to_dict()["recommendations"])
@@ -168,6 +177,26 @@ class TestFrameworkDetection:
         assert "MoveIt topics detected" in recommendations
         assert "joint_states → planned_path" in recommendations
         assert "1 sample" in recommendations
+
+    def test_robot_arm_perception_bag_uses_domain_specific_recommendations(self, robotarm_bag: Path):
+        report = evaluate_bag(str(robotarm_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Robot arm perception/manipulation topics detected" in recommendations
+        assert "JointState (/joint_states) at 200Hz" in recommendations
+        assert "RGB image (/camera_1/color/image_raw) at 30Hz" in recommendations
+        assert "Depth image (/camera_1/aligned_depth_to_color/image_raw) at 15Hz" in recommendations
+        assert "Camera calibration topics are recorded" in recommendations
+        assert "No GNSS data" not in recommendations
+        assert "No IMU data" not in recommendations
+
+    def test_robot_arm_sync_excludes_camera_info_cross_pairs(self, robotarm_bag: Path):
+        report = evaluate_bag(str(robotarm_bag))
+        assert report.sync is not None
+
+        sync_pairs = {topic for pair in report.sync.topic_pairs for topic in pair}
+        assert "/camera_1/color/camera_info" not in sync_pairs
+        assert "/camera_1/aligned_depth_to_color/camera_info" not in sync_pairs
 
 
 class TestEvalConfig:

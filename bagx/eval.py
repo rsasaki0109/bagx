@@ -677,10 +677,8 @@ def generate_recommendations(report: EvalReport) -> list[str]:
     recs: list[str] = []
 
     # Detect non-SLAM domains first to suppress irrelevant SLAM advice
-    domain_recs = _detect_domain_recommendations(report)
-    is_non_slam_domain = any(
-        "Nav2" in r or "Autoware" in r or "MoveIt" in r for r in domain_recs
-    )
+    domain_names = _detect_domain_names(report.topic_info)
+    is_non_slam_domain = bool(domain_names)
 
     # --- GNSS ---
     if report.gnss:
@@ -797,6 +795,24 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         return recs
 
     topic_types = {t: info["type"] for t, info in topics.items()}
+    image_topics = _select_topics(
+        topics,
+        type_markers=("image", "compressedimage"),
+        contains=("image",),
+    )
+    color_image_topics = [
+        name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
+    ]
+    depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
+    camera_info_topics = _select_topics(
+        topics,
+        type_markers=("camerainfo",),
+        contains=("camera_info",),
+    )
+    color_info_topics = [
+        name for name in camera_info_topics if "depth" not in name.lower() and "infra" not in name.lower()
+    ]
+    depth_info_topics = [name for name in camera_info_topics if "depth" in name.lower()]
 
     odom_topics = _select_topics(
         topics,
@@ -987,9 +1003,9 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         # LiDAR check under /sensing
         lidar_topics = _select_topics(
             topics,
-            type_markers=("pointcloud2",),
+            type_markers=("pointcloud2", "velodynescan"),
             prefixes=("/sensing/",),
-            contains=("lidar", "pointcloud"),
+            contains=("lidar", "pointcloud", "velodyne_packets"),
         )
         for name in lidar_topics:
             rate = topics[name]["rate_hz"]
@@ -1006,6 +1022,18 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         for name in gnss_topics:
             if "navsatfix" in topic_types[name].lower():
                 recs.append(f"  [green]:heavy_check_mark:[/green] GNSS ({name})")
+
+        vehicle_status_topics = _select_topics(
+            topics,
+            prefixes=("/vehicle/status/",),
+            contains=("velocity_status", "steering_status", "gear_status"),
+        ) or _select_topics(topics, prefixes=("/vehicle/status/",))
+        for name in vehicle_status_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                recs.append(
+                    f"  [green]:heavy_check_mark:[/green] Vehicle status ({name}) at {rate:.0f}Hz — control/vehicle telemetry recorded"
+                )
 
         # Autoware pipeline latency
         ts = report._topic_timestamps
@@ -1190,6 +1218,57 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
                 max_response_ms=5000.0,
             )
 
+    robot_arm_evidence = bool(joint_state_topics and (color_image_topics or depth_image_topics))
+    if robot_arm_evidence and "MoveIt" not in _detect_domain_names(topics):
+        recs.append("[bold cyan]Robot arm perception/manipulation topics detected[/bold cyan]")
+
+        for name in joint_state_topics:
+            rate = topics[name]["rate_hz"]
+            if 0 < rate < 100_000:
+                if rate >= 100:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] JointState ({name}) at {rate:.0f}Hz — good for manipulation state tracking"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] JointState ({name}) at {rate:.0f}Hz — 100Hz+ recommended for responsive arm control"
+                    )
+
+        for name in color_image_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                rate_label = _format_rate_hz(rate)
+                if rate >= 15:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] RGB image ({name}) at {rate_label}Hz — good for manipulation perception"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] RGB image ({name}) at {rate_label}Hz — 15Hz+ recommended for manipulation perception"
+                    )
+
+        for name in depth_image_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                rate_label = _format_rate_hz(rate)
+                if rate >= 15:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] Depth image ({name}) at {rate_label}Hz — good for RGB-D grasp perception"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] Depth image ({name}) at {rate_label}Hz — 15Hz+ recommended for RGB-D grasp perception"
+                    )
+
+        if color_image_topics and depth_image_topics:
+            recs.append(
+                "  [green]:heavy_check_mark:[/green] RGB and depth streams are both recorded — suitable for open-loop manipulation perception benchmarking"
+            )
+        if color_info_topics or depth_info_topics:
+            recs.append(
+                "  [green]:heavy_check_mark:[/green] Camera calibration topics are recorded — exported perception data is reusable"
+            )
+
     return recs
 
 
@@ -1315,6 +1394,18 @@ def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
     if moveit_evidence >= 2 or (joint_state_topics and planned_path_topics):
         names.add("MoveIt")
 
+    image_topics = _select_topics(
+        topics,
+        type_markers=("image", "compressedimage"),
+        contains=("image",),
+    )
+    color_image_topics = [
+        name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
+    ]
+    depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
+    if joint_state_topics and (color_image_topics or depth_image_topics):
+        names.add("RobotArm")
+
     return names
 
 
@@ -1382,9 +1473,9 @@ def _compute_domain_score(report: EvalReport) -> float | None:
         )
         lidar_topics = _select_topics(
             topics,
-            type_markers=("pointcloud2",),
+            type_markers=("pointcloud2", "velodynescan"),
             prefixes=("/sensing/",),
-            contains=("lidar", "pointcloud"),
+            contains=("lidar", "pointcloud", "velodyne_packets"),
         )
         gnss_topics = _select_topics(
             topics,
@@ -1392,6 +1483,11 @@ def _compute_domain_score(report: EvalReport) -> float | None:
             prefixes=("/sensing/",),
             contains=("gnss",),
         )
+        vehicle_status_topics = _select_topics(
+            topics,
+            prefixes=("/vehicle/status/",),
+            contains=("velocity_status", "steering_status", "gear_status"),
+        ) or _select_topics(topics, prefixes=("/vehicle/status/",))
         planning_topics = _select_topics(
             topics,
             prefixes=("/planning/",),
@@ -1406,6 +1502,7 @@ def _compute_domain_score(report: EvalReport) -> float | None:
         autoware_scores = []
         autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in camera_topics)
         autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 10.0) for name in lidar_topics)
+        autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 20.0) for name in vehicle_status_topics)
         if gnss_topics:
             autoware_scores.append(100.0)
         if planning_topics or control_topics:
@@ -1417,6 +1514,40 @@ def _compute_domain_score(report: EvalReport) -> float | None:
                 autoware_scores.append(0.0)
         if autoware_scores:
             scores.append(float(np.mean(autoware_scores)))
+
+    if "RobotArm" in domains:
+        joint_state_topics = _select_topics(
+            topics,
+            type_markers=("jointstate",),
+            suffixes=("/joint_states",),
+            contains=("joint_states",),
+        )
+        image_topics = _select_topics(
+            topics,
+            type_markers=("image", "compressedimage"),
+            contains=("image",),
+        )
+        color_image_topics = [
+            name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
+        ]
+        depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
+        camera_info_topics = _select_topics(
+            topics,
+            type_markers=("camerainfo",),
+            contains=("camera_info",),
+        )
+
+        robot_arm_scores = []
+        if joint_state_topics:
+            robot_arm_scores.append(_rate_goal_score(topics[joint_state_topics[0]]["rate_hz"], 100.0))
+        robot_arm_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in color_image_topics)
+        robot_arm_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in depth_image_topics)
+        if color_image_topics and depth_image_topics:
+            robot_arm_scores.append(100.0)
+        if camera_info_topics:
+            robot_arm_scores.append(100.0)
+        if robot_arm_scores:
+            scores.append(float(np.mean(robot_arm_scores)))
 
     if "MoveIt" in domains:
         joint_state_topics = _select_topics(
@@ -1467,6 +1598,13 @@ def _rate_goal_score(rate_hz: float, target_hz: float) -> float:
     if rate_hz <= 0 or target_hz <= 0:
         return 0.0
     return float(max(0.0, min(100.0, (rate_hz / target_hz) * 100.0)))
+
+
+def _format_rate_hz(rate_hz: float) -> str:
+    """Format a rate without hiding threshold-relevant decimals."""
+    if rate_hz < 20 and abs(rate_hz - round(rate_hz)) >= 0.05:
+        return f"{rate_hz:.1f}"
+    return f"{rate_hz:.0f}"
 
 
 def _select_topics(
