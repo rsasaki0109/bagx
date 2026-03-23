@@ -16,6 +16,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
+from bagx.custom_rules import CustomDomainResult, evaluate_custom_rule_set, load_custom_rule_set
 from bagx.contracts import report_metadata
 from bagx.reader import BagReader, Message
 from bagx.topic_filters import is_sync_candidate
@@ -100,6 +101,7 @@ class EvalReport:
     domain_score: float | None = None
     overall_score: float = 0.0
     topic_info: dict = field(default_factory=dict)  # {name: {"type": str, "count": int, "rate_hz": float}}
+    custom_domains: list[CustomDomainResult] = field(default_factory=list)
     _topic_timestamps: dict = field(default_factory=dict, repr=False)  # internal, not serialized
 
     def to_dict(self) -> dict:
@@ -108,6 +110,10 @@ class EvalReport:
         d.pop("_topic_timestamps", None)
         # Clean up NaN for JSON
         d = _clean_nan(d)
+        for custom_domain in d.get("custom_domains", []):
+            custom_domain["recommendations"] = [
+                _strip_rich_markup(item) for item in custom_domain.get("recommendations", [])
+            ]
         # Add recommendations
         d["recommendations"] = [
             _strip_rich_markup(r) for r in generate_recommendations(self)
@@ -132,6 +138,7 @@ def evaluate_bag(
     bag_path: str,
     output_json: TextIO | None = None,
     config: EvalConfig | None = None,
+    custom_rules_path: str | None = None,
 ) -> EvalReport:
     """Run full quality evaluation on a bag file."""
     if config is None:
@@ -216,7 +223,14 @@ def evaluate_bag(
             "rate_hz": round(rate_hz, 1),
         }
 
-    domains = _detect_domain_names(report.topic_info)
+    custom_rule_set = load_custom_rule_set(custom_rules_path) if custom_rules_path else None
+    report.custom_domains = evaluate_custom_rule_set(
+        report.topic_info,
+        report._topic_timestamps,
+        custom_rule_set,
+    )
+
+    domains = detect_domain_names(report.topic_info, report.custom_domains)
 
     # Evaluate sync
     sync_topics = [
@@ -679,7 +693,7 @@ def generate_recommendations(report: EvalReport) -> list[str]:
     recs: list[str] = []
 
     # Detect non-SLAM domains first to suppress irrelevant SLAM advice
-    domain_names = _detect_domain_names(report.topic_info)
+    domain_names = detect_domain_names(report.topic_info, report.custom_domains)
     is_non_slam_domain = bool(domain_names)
 
     # --- GNSS ---
@@ -785,6 +799,8 @@ def generate_recommendations(report: EvalReport) -> list[str]:
 
     # --- Domain-specific recommendations ---
     recs.extend(_detect_domain_recommendations(report))
+    for domain in report.custom_domains:
+        recs.extend(domain.recommendations)
 
     return recs
 
@@ -1405,6 +1421,17 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
     return recs
 
 
+def detect_domain_names(
+    topics: dict[str, dict],
+    custom_domains: list[CustomDomainResult] | None = None,
+) -> set[str]:
+    """Return built-in plus custom domain names inferred from a bag report."""
+    names = _detect_domain_names(topics)
+    if custom_domains:
+        names.update(domain.name for domain in custom_domains)
+    return names
+
+
 def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
     """Return high-level framework names inferred from topic names/types."""
     if not topics:
@@ -1504,7 +1531,7 @@ def _compute_domain_score(report: EvalReport) -> float | None:
         return None
 
     scores: list[float] = []
-    domains = _detect_domain_names(topics)
+    domains = detect_domain_names(topics, report.custom_domains)
 
     if "Nav2" in domains:
         odom_topics = _select_topics(
@@ -1747,6 +1774,9 @@ def _compute_domain_score(report: EvalReport) -> float | None:
             moveit_scores.append(85.0)
         scores.append(float(np.mean(moveit_scores)))
 
+    for domain in report.custom_domains:
+        scores.append(domain.score)
+
     return max(scores) if scores else None
 
 
@@ -1815,12 +1845,17 @@ def _select_control_command_topics(topics: dict[str, dict]) -> list[str]:
 
 def _select_generic_planning_topics(topics: dict[str, dict]) -> list[str]:
     """Select generic planning output topics without assuming a framework."""
-    return _select_topics(
+    matches = _select_topics(
         topics,
         type_markers=("path", "trajectory"),
         suffixes=("/path", "/trajectory"),
         contains=("/path", "_path", "trajectory"),
     )
+    return [
+        name
+        for name in matches
+        if "_service_event" not in name.lower() and "_action/" not in name.lower()
+    ]
 
 
 def _select_action_status_topics(topics: dict[str, dict]) -> list[str]:

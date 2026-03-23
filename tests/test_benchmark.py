@@ -137,6 +137,35 @@ class TestBenchmarkSuite:
         assert report.passed_cases == 1
         assert report.cases[0].detected_domains == ["Control"]
 
+    def test_run_benchmark_suite_with_manifest_rules_path(
+        self,
+        tmp_path: Path,
+        custom_rule_bag: Path,
+        custom_rules_file: Path,
+    ):
+        manifest_path = tmp_path / "benchmark.json"
+        manifest_path.write_text(json.dumps({
+            "suite_name": "custom-rules-suite",
+            "rules_path": str(custom_rules_file),
+            "cases": [
+                {
+                    "name": "warehouse-bot",
+                    "bag_path": str(custom_rule_bag),
+                    "expect": {
+                        "required_domains": ["WarehouseBot"],
+                        "required_recommendations": ["WarehouseBot custom rules matched"],
+                        "forbidden_recommendations": ["No GNSS data", "No IMU data"],
+                        "min_domain_score": 90,
+                    },
+                }
+            ],
+        }, indent=2))
+
+        report = run_benchmark_suite(str(manifest_path))
+
+        assert report.passed_cases == 1
+        assert "WarehouseBot" in report.cases[0].detected_domains
+
 
 class TestBenchmarkCli:
     def test_benchmark_cli_json_output(self, tmp_path: Path, nav2_bag: Path):

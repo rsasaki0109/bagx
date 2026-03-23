@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.contracts import report_metadata
-from bagx.eval import _detect_domain_names, evaluate_bag
+from bagx.eval import detect_domain_names, evaluate_bag
 
 
 @dataclass
@@ -70,6 +70,7 @@ def run_benchmark_suite(
     *,
     fail_on_missing: bool = False,
     selected_cases: list[str] | None = None,
+    rules_path: str | None = None,
 ) -> BenchmarkSuiteReport:
     """Run a manifest-driven benchmark suite."""
     manifest_file = Path(manifest_path)
@@ -77,13 +78,22 @@ def run_benchmark_suite(
         manifest = json.load(f)
 
     suite_name = manifest.get("suite_name", manifest_file.stem)
+    manifest_rules_path = manifest.get("rules_path")
+    cli_rules_path = None
+    if rules_path:
+        cli_rules_path = str(Path(os.path.expandvars(rules_path)).expanduser().resolve())
     raw_cases = manifest.get("cases", [])
     if selected_cases:
         selected = set(selected_cases)
         raw_cases = [case for case in raw_cases if case.get("name") in selected]
 
     case_results = [
-        _run_benchmark_case(case, manifest_file.parent, fail_on_missing=fail_on_missing)
+        _run_benchmark_case(
+            case,
+            manifest_file.parent,
+            fail_on_missing=fail_on_missing,
+            default_rules_path=cli_rules_path or manifest_rules_path,
+        )
         for case in raw_cases
     ]
 
@@ -103,10 +113,17 @@ def _run_benchmark_case(
     manifest_dir: Path,
     *,
     fail_on_missing: bool,
+    default_rules_path: str | None,
 ) -> BenchmarkCaseResult:
     name = str(case.get("name", "unnamed"))
     bag_path = str(case.get("bag_path", ""))
     resolved_path = _resolve_manifest_path(bag_path, manifest_dir)
+    raw_rules_path = case.get("rules_path", default_rules_path)
+    resolved_rules_path = (
+        str(_resolve_manifest_path(str(raw_rules_path), manifest_dir))
+        if raw_rules_path
+        else None
+    )
     report_type = str(case.get("report_type", "eval"))
 
     if report_type != "eval":
@@ -131,11 +148,11 @@ def _run_benchmark_case(
             summary=summary,
         )
 
-    report = evaluate_bag(str(resolved_path))
+    report = evaluate_bag(str(resolved_path), custom_rules_path=resolved_rules_path)
     expectations = case.get("expect", {})
     recommendations = report.to_dict()["recommendations"]
     recommendation_text = "\n".join(recommendations)
-    detected_domains = sorted(_detect_domain_names(report.topic_info))
+    detected_domains = sorted(detect_domain_names(report.topic_info, report.custom_domains))
     checks = _evaluate_expectations(
         expectations=expectations,
         overall_score=report.overall_score,

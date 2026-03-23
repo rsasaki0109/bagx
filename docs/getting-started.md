@@ -37,6 +37,9 @@ bagx info your_bag.db3
 # Evaluate quality
 bagx eval your_bag.db3
 
+# Evaluate with custom rules for your stack
+bagx eval your_bag.db3 --rules examples/custom_rules/warehouse_bot.json
+
 # Export to JSON for inspection
 bagx eval your_bag.db3 --json report.json
 

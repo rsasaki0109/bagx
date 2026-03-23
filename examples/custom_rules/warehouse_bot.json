@@ -1,0 +1,78 @@
+{
+  "domains": [
+    {
+      "name": "WarehouseBot",
+      "min_matches": 2,
+      "match_topics": [
+        {
+          "name_contains": "wheel_odom",
+          "type_contains": "WheelOdometry"
+        },
+        {
+          "name_contains": "controller_cmd",
+          "type_contains": "ControllerCommand"
+        },
+        {
+          "name_contains": "mission_path",
+          "type_contains": "MissionPath"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "topic_rate",
+          "label": "Wheel odometry",
+          "selector": {
+            "name_contains": "wheel_odom"
+          },
+          "min_rate_hz": 20
+        },
+        {
+          "kind": "topic_rate",
+          "label": "Controller command",
+          "selector": {
+            "name_contains": "controller_cmd"
+          },
+          "min_rate_hz": 10
+        },
+        {
+          "kind": "topic_exists",
+          "label": "Mission path",
+          "selector": {
+            "name_contains": "mission_path"
+          }
+        },
+        {
+          "kind": "topic_exists",
+          "label": "Mission result",
+          "selector": {
+            "suffix": "/result"
+          }
+        },
+        {
+          "kind": "latency",
+          "label": "mission path \u2192 controller",
+          "input": {
+            "name_contains": "mission_path"
+          },
+          "output": {
+            "name_contains": "controller_cmd"
+          },
+          "target_ms": 100,
+          "max_response_ms": 1000
+        },
+        {
+          "kind": "latency",
+          "label": "service call \u2192 mission path",
+          "input": {
+            "name_contains": "_service_event"
+          },
+          "output": {
+            "name_contains": "mission_path"
+          },
+          "target_ms": 50,
+          "max_response_ms": 500
+        }
+      ]
+    }
+  ]
+}

@@ -97,6 +97,12 @@ class TestCliEval:
         assert "MoveIt topics detected" in result.output
         assert "/fr3/joint_states" in result.output
 
+    def test_eval_with_custom_rules(self, custom_rule_bag: Path, custom_rules_file: Path):
+        result = runner.invoke(app, ["eval", str(custom_rule_bag), "--rules", str(custom_rules_file)])
+        assert result.exit_code == 0
+        assert "WarehouseBot custom rules matched" in result.output
+        assert "/warehouse_bot/wheel_odom" in result.output
+
 
 class TestCliCompare:
     def test_compare(self, gnss_bag: Path, gnss_bag_degraded: Path):
@@ -250,6 +256,60 @@ class TestCliBatch:
             data = json.load(f)
         assert data["total_bags"] == 2
         assert "bags" in data
+
+
+class TestCliBenchmarkRules:
+    def test_benchmark_with_rules_option(self, custom_rule_bag: Path, custom_rules_file: Path, tmp_path: Path):
+        manifest_path = tmp_path / "custom-benchmark.json"
+        manifest_path.write_text(json.dumps({
+            "suite_name": "custom-rules-suite",
+            "cases": [
+                {
+                    "name": "warehouse-bot",
+                    "bag_path": str(custom_rule_bag),
+                    "expect": {
+                        "required_domains": ["WarehouseBot"],
+                        "required_recommendations": ["WarehouseBot custom rules matched"],
+                    },
+                }
+            ],
+        }))
+
+        result = runner.invoke(app, ["benchmark", str(manifest_path), "--rules", str(custom_rules_file)])
+
+        assert result.exit_code == 0
+        assert "warehouse-bot" in result.output
+
+    def test_benchmark_with_relative_rules_option(
+        self,
+        custom_rule_bag: Path,
+        monkeypatch,
+        tmp_path: Path,
+    ):
+        repo_root = Path(__file__).resolve().parents[1]
+        monkeypatch.chdir(repo_root)
+
+        manifest_path = tmp_path / "custom-benchmark.json"
+        manifest_path.write_text(json.dumps({
+            "suite_name": "custom-rules-suite",
+            "cases": [
+                {
+                    "name": "warehouse-bot",
+                    "bag_path": str(custom_rule_bag),
+                    "expect": {
+                        "required_domains": ["WarehouseBot"],
+                    },
+                }
+            ],
+        }))
+
+        result = runner.invoke(
+            app,
+            ["benchmark", str(manifest_path), "--rules", "examples/custom_rules/warehouse_bot.json"],
+        )
+
+        assert result.exit_code == 0
+        assert "warehouse-bot" in result.output
 
 
 class TestCliAsk:

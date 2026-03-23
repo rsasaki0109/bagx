@@ -51,6 +51,7 @@ nav:
   - Getting Started: getting-started.md
   - User Guide:
       - eval — Quality Evaluation: guide/eval.md
+      - custom-rules — Custom Message Rules: guide/custom-rules.md
       - compare — Bag Comparison: guide/compare.md
       - sync — Sync Analysis: guide/sync.md
       - export — Data Export: guide/export.md
