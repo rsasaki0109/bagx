@@ -857,17 +857,6 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         suffixes=("/amcl_pose",),
         contains=("amcl_pose",),
     )
-    map_topics = _select_topics(
-        topics,
-        type_markers=("occupancygrid",),
-        suffixes=("/map",),
-        contains=("/map",),
-    )
-    behavior_tree_topics = _select_topics(
-        topics,
-        suffixes=("/behavior_tree_log",),
-        contains=("behavior_tree_log",),
-    )
     navigate_status_topics = _select_topics(
         topics,
         contains=("navigate_to_pose/_action/status",),
@@ -877,25 +866,8 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         contains=("navigate_to_pose/_action/feedback",),
     )
 
-    nav2_evidence = sum(
-        bool(matches)
-        for matches in [
-            odom_topics,
-            scan_topics,
-            cmd_vel_topics,
-            local_costmap_topics,
-            global_costmap_topics,
-            plan_topics,
-            amcl_topics,
-            map_topics,
-            behavior_tree_topics,
-            navigate_status_topics,
-            navigate_feedback_topics,
-        ]
-    )
-
     # --- Nav2 detection ---
-    if nav2_evidence >= 2 or (scan_topics and odom_topics):
+    if _has_nav2_signature(topics):
         recs.append("[bold cyan]Nav2 topics detected[/bold cyan]")
 
         # Odom check
@@ -979,6 +951,11 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
                 min_input_samples=1,
                 max_response_ms=1000.0,
             )
+
+    generic_planning_topics = _select_generic_planning_topics(topics)
+    generic_control_topics = _select_control_command_topics(topics)
+    generic_action_status_topics = _select_action_status_topics(topics)
+    generic_action_feedback_topics = _select_action_feedback_topics(topics)
 
     # --- Autoware detection ---
     autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
@@ -1222,6 +1199,83 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
                 max_response_ms=5000.0,
             )
 
+    if "Control" in domains and not ({"Nav2", "Autoware", "MoveIt"} & domains):
+        recs.append("[bold cyan]Planning/control topics detected[/bold cyan]")
+
+        for name in odom_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 20:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] State feedback ({name}) at {rate:.0f}Hz — good for closed-loop control"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] State feedback ({name}) at {rate:.0f}Hz — 20Hz+ recommended for closed-loop control"
+                    )
+
+        for name in joint_state_topics:
+            rate = topics[name]["rate_hz"]
+            if 0 < rate < 100_000:
+                if rate >= 100:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] JointState ({name}) at {rate:.0f}Hz — good for actuator/state observability"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] JointState ({name}) at {rate:.0f}Hz — 100Hz+ recommended for responsive joint control"
+                    )
+
+        for name in generic_control_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 10:
+                    recs.append(
+                        f"  [green]:heavy_check_mark:[/green] Control command ({name}) at {rate:.0f}Hz — good for control-loop observability"
+                    )
+                else:
+                    recs.append(
+                        f"  [yellow]:warning:[/yellow] Control command ({name}) at {rate:.0f}Hz — 10Hz+ recommended for closed-loop control"
+                    )
+
+        if generic_planning_topics:
+            for name in generic_planning_topics:
+                recs.append(
+                    f"  [green]:heavy_check_mark:[/green] Planner output ({name}) recorded {topics[name]['count']} times — upstream planning is visible"
+                )
+        else:
+            recs.append(
+                "  [yellow]:warning:[/yellow] No planner output topic recorded — upstream planning is hard to inspect from this bag"
+            )
+
+        if generic_action_status_topics:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Action status ({generic_action_status_topics[0]}) recorded — goal lifecycle is observable"
+            )
+        elif generic_action_feedback_topics:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Action feedback ({generic_action_feedback_topics[0]}) recorded — goal progress is observable"
+            )
+
+        control_pipelines = []
+        if generic_planning_topics and generic_control_topics:
+            control_pipelines.append((generic_planning_topics[0], generic_control_topics[0], "planner → command onset"))
+        _add_event_response_latency_recs(
+            recs,
+            report._topic_timestamps,
+            control_pipelines,
+            min_input_samples=1,
+            max_response_ms=2000.0,
+        )
+        if generic_control_topics and odom_topics:
+            _add_event_response_latency_recs(
+                recs,
+                report._topic_timestamps,
+                [(generic_control_topics[0], odom_topics[0], "command → state feedback")],
+                min_input_samples=3,
+                max_response_ms=1000.0,
+            )
+
     robot_arm_evidence = bool(joint_state_topics and (color_image_topics or depth_image_topics))
     if robot_arm_evidence and "MoveIt" not in domains:
         recs.append("[bold cyan]Robot arm perception/manipulation topics detected[/bold cyan]")
@@ -1339,68 +1393,7 @@ def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
 
     names: set[str] = set()
 
-    odom_topics = _select_topics(
-        topics,
-        type_markers=("odometry",),
-        suffixes=("/odom",),
-        contains=("odometry/filtered", "/odometry/"),
-    )
-    scan_topics = _select_topics(
-        topics,
-        type_markers=("laserscan",),
-        suffixes=("/scan",),
-        contains=("/scan_",),
-    )
-    cmd_vel_topics = _select_topics(
-        topics,
-        type_markers=("twist", "twiststamped"),
-        suffixes=("/cmd_vel", "/cmd_vel_smoothed"),
-        contains=("cmd_vel",),
-    )
-    local_costmap_topics = _select_topics(
-        topics,
-        suffixes=("/local_costmap", "/local_costmap/costmap"),
-        contains=("local_costmap",),
-    )
-    global_costmap_topics = _select_topics(
-        topics,
-        suffixes=("/global_costmap", "/global_costmap/costmap"),
-        contains=("global_costmap",),
-    )
-    plan_topics = _select_topics(
-        topics,
-        suffixes=("/plan", "/global_plan"),
-        contains=("planner_server/plan", "/plan", "trajectory"),
-    )
-    amcl_topics = _select_topics(
-        topics,
-        type_markers=("posewithcovariancestamped",),
-        suffixes=("/amcl_pose",),
-        contains=("amcl_pose",),
-    )
-    navigate_status_topics = _select_topics(
-        topics,
-        contains=("navigate_to_pose/_action/status",),
-    )
-    navigate_feedback_topics = _select_topics(
-        topics,
-        contains=("navigate_to_pose/_action/feedback",),
-    )
-    nav2_evidence = sum(
-        bool(matches)
-        for matches in [
-            odom_topics,
-            scan_topics,
-            cmd_vel_topics,
-            local_costmap_topics,
-            global_costmap_topics,
-            plan_topics,
-            amcl_topics,
-            navigate_status_topics,
-            navigate_feedback_topics,
-        ]
-    )
-    if nav2_evidence >= 2 or (scan_topics and odom_topics):
+    if _has_nav2_signature(topics):
         names.add("Nav2")
 
     autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
@@ -1478,6 +1471,9 @@ def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
         and "Autoware" not in names
     ):
         names.add("Perception")
+
+    if _has_control_signature(topics) and not ({"Nav2", "Autoware", "MoveIt"} & names):
+        names.add("Control")
 
     return names
 
@@ -1650,6 +1646,38 @@ def _compute_domain_score(report: EvalReport) -> float | None:
         if perception_scores:
             scores.append(float(np.mean(perception_scores)))
 
+    if "Control" in domains:
+        odom_topics = _select_topics(
+            topics,
+            type_markers=("odometry",),
+            suffixes=("/odom",),
+            contains=("odometry/filtered", "/odometry/"),
+        )
+        joint_state_topics = _select_topics(
+            topics,
+            type_markers=("jointstate",),
+            suffixes=("/joint_states",),
+            contains=("joint_states",),
+        )
+        control_command_topics = _select_control_command_topics(topics)
+        planning_topics = _select_generic_planning_topics(topics)
+        action_status_topics = _select_action_status_topics(topics)
+        action_feedback_topics = _select_action_feedback_topics(topics)
+
+        control_scores = []
+        if odom_topics:
+            control_scores.append(_rate_goal_score(topics[odom_topics[0]]["rate_hz"], 20.0))
+        if joint_state_topics:
+            control_scores.append(_rate_goal_score(topics[joint_state_topics[0]]["rate_hz"], 100.0))
+        if control_command_topics:
+            control_scores.append(_rate_goal_score(topics[control_command_topics[0]]["rate_hz"], 10.0))
+        if planning_topics:
+            control_scores.append(100.0)
+        if action_status_topics or action_feedback_topics:
+            control_scores.append(100.0)
+        if control_scores:
+            scores.append(float(np.mean(control_scores)))
+
     if "MoveIt" in domains:
         joint_state_topics = _select_topics(
             topics,
@@ -1745,6 +1773,153 @@ def _select_topics(
         matches.append(name)
 
     return sorted(matches, key=lambda name: (-topics[name]["rate_hz"], name))
+
+
+def _select_control_command_topics(topics: dict[str, dict]) -> list[str]:
+    """Select generic control command topics based on standard ROS messages."""
+    return _select_topics(
+        topics,
+        type_markers=("twist", "twiststamped", "ackermann", "jointtrajectory"),
+        suffixes=("/cmd_vel", "/cmd_vel_smoothed", "/command", "/trajectory_cmd"),
+        contains=("cmd_vel", "control_cmd", "/command", "_cmd", "ackermann", "trajectory_cmd"),
+    )
+
+
+def _select_generic_planning_topics(topics: dict[str, dict]) -> list[str]:
+    """Select generic planning output topics without assuming a framework."""
+    return _select_topics(
+        topics,
+        type_markers=("path", "trajectory"),
+        suffixes=("/path", "/trajectory"),
+        contains=("/path", "_path", "trajectory"),
+    )
+
+
+def _select_action_status_topics(topics: dict[str, dict]) -> list[str]:
+    """Select generic action status topics."""
+    return _select_topics(
+        topics,
+        contains=("_action/status",),
+    )
+
+
+def _select_action_feedback_topics(topics: dict[str, dict]) -> list[str]:
+    """Select generic action feedback topics."""
+    return _select_topics(
+        topics,
+        contains=("_action/feedback",),
+    )
+
+
+def _has_nav2_signature(topics: dict[str, dict]) -> bool:
+    """Return whether topics look like Nav2 rather than generic control."""
+    odom_topics = _select_topics(
+        topics,
+        type_markers=("odometry",),
+        suffixes=("/odom",),
+        contains=("odometry/filtered", "/odometry/"),
+    )
+    scan_topics = _select_topics(
+        topics,
+        type_markers=("laserscan",),
+        suffixes=("/scan",),
+        contains=("/scan_",),
+    )
+    cmd_vel_topics = _select_topics(
+        topics,
+        type_markers=("twist", "twiststamped"),
+        suffixes=("/cmd_vel", "/cmd_vel_smoothed"),
+        contains=("cmd_vel",),
+    )
+    local_costmap_topics = _select_topics(
+        topics,
+        suffixes=("/local_costmap", "/local_costmap/costmap"),
+        contains=("local_costmap",),
+    )
+    global_costmap_topics = _select_topics(
+        topics,
+        suffixes=("/global_costmap", "/global_costmap/costmap"),
+        contains=("global_costmap",),
+    )
+    plan_topics = _select_topics(
+        topics,
+        suffixes=("/plan", "/global_plan"),
+        contains=("planner_server/plan", "/plan"),
+    )
+    amcl_topics = _select_topics(
+        topics,
+        type_markers=("posewithcovariancestamped",),
+        suffixes=("/amcl_pose",),
+        contains=("amcl_pose",),
+    )
+    map_topics = _select_topics(
+        topics,
+        type_markers=("occupancygrid",),
+        suffixes=("/map",),
+        contains=("/map",),
+    )
+    behavior_tree_topics = _select_topics(
+        topics,
+        suffixes=("/behavior_tree_log",),
+        contains=("behavior_tree_log",),
+    )
+    navigate_status_topics = _select_action_status_topics({
+        name: info for name, info in topics.items() if "navigate_to_pose" in name.lower()
+    })
+    navigate_feedback_topics = _select_action_feedback_topics({
+        name: info for name, info in topics.items() if "navigate_to_pose" in name.lower()
+    })
+
+    nav2_specific = sum(
+        bool(matches)
+        for matches in [
+            local_costmap_topics,
+            global_costmap_topics,
+            amcl_topics,
+            map_topics,
+            behavior_tree_topics,
+            navigate_status_topics,
+            navigate_feedback_topics,
+        ]
+    )
+    nav2_support = sum(
+        bool(matches)
+        for matches in [
+            odom_topics,
+            scan_topics,
+            cmd_vel_topics,
+            plan_topics,
+        ]
+    )
+    return (nav2_specific >= 1 and nav2_support >= 1) or bool(scan_topics and odom_topics and plan_topics)
+
+
+def _has_control_signature(topics: dict[str, dict]) -> bool:
+    """Return whether topics look like a generic planning/control loop."""
+    odom_topics = _select_topics(
+        topics,
+        type_markers=("odometry",),
+        suffixes=("/odom",),
+        contains=("odometry/filtered", "/odometry/"),
+    )
+    joint_state_topics = _select_topics(
+        topics,
+        type_markers=("jointstate",),
+        suffixes=("/joint_states",),
+        contains=("joint_states",),
+    )
+    control_command_topics = _select_control_command_topics(topics)
+    planning_topics = _select_generic_planning_topics(topics)
+    action_status_topics = _select_action_status_topics(topics)
+    action_feedback_topics = _select_action_feedback_topics(topics)
+
+    state_feedback = bool(odom_topics or joint_state_topics)
+    action_activity = bool(action_status_topics or action_feedback_topics)
+    return (
+        (state_feedback and bool(control_command_topics))
+        or (bool(planning_topics) and bool(control_command_topics))
+        or (state_feedback and action_activity)
+    )
 
 
 def _add_pipeline_latency_recs(

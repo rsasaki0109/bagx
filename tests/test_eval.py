@@ -217,6 +217,27 @@ class TestFrameworkDetection:
         assert report.domain_score is not None
         assert report.domain_score >= 90
 
+    def test_generic_control_bag_uses_generic_control_recommendations(self, generic_control_bag: Path):
+        report = evaluate_bag(str(generic_control_bag))
+        recommendations = "\n".join(report.to_dict()["recommendations"])
+
+        assert "Planning/control topics detected" in recommendations
+        assert "State feedback (/base/state/odom) at 25Hz" in recommendations
+        assert "Control command (/drive/cmd_vel) at 20Hz" in recommendations
+        assert "Planner output (/planner/path) recorded 8 times" in recommendations
+        assert "Action status (/mission/_action/status) recorded" in recommendations
+        assert "planner → command onset" in recommendations
+        assert "command → state feedback" in recommendations
+        assert "Nav2 topics detected" not in recommendations
+        assert "No GNSS data" not in recommendations
+        assert "No IMU data" not in recommendations
+
+    def test_generic_control_bag_has_domain_score(self, generic_control_bag: Path):
+        report = evaluate_bag(str(generic_control_bag))
+
+        assert report.domain_score is not None
+        assert report.domain_score >= 90
+
 
 class TestEvalConfig:
     """Test EvalConfig customization."""
