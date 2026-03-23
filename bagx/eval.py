@@ -97,9 +97,12 @@ class EvalReport:
     sync: SyncMetrics | None = None
     overall_score: float = 0.0
     topic_info: dict = field(default_factory=dict)  # {name: {"type": str, "count": int, "rate_hz": float}}
+    _topic_timestamps: dict = field(default_factory=dict, repr=False)  # internal, not serialized
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        # Remove internal fields
+        d.pop("_topic_timestamps", None)
         # Clean up NaN for JSON
         d = _clean_nan(d)
         # Add recommendations
@@ -190,6 +193,9 @@ def evaluate_bag(
         report.imu = best_imu
     if report.imu is None:
         logger.info("No IMU topics found in %s", bag_path)
+
+    # Store timestamps for domain-specific pipeline latency analysis
+    report._topic_timestamps = topic_timestamps
 
     # Build topic info with rates for domain detection
     for name, info in summary.topics.items():
@@ -745,11 +751,11 @@ def generate_recommendations(report: EvalReport) -> list[str]:
             )
         elif worst_delay < 20:
             recs.append(
-                f"[green]:heavy_check_mark:[/green] Sensor sync good ({worst_delay:.1f}ms) — suitable for most SLAM methods"
+                f"[green]:heavy_check_mark:[/green] Sensor sync good ({worst_delay:.1f}ms)"
             )
-        else:
+        elif not is_non_slam_domain:
             recs.append(
-                f"[yellow]:warning:[/yellow] {t1} \u2194 {t2} sync delay {worst_delay:.0f}ms — enable per-point deskew / timestamp compensation in SLAM"
+                f"[yellow]:warning:[/yellow] {t1} \u2194 {t2} sync delay {worst_delay:.0f}ms — enable per-point deskew / timestamp compensation"
             )
 
     # --- Domain-specific recommendations ---
@@ -803,6 +809,15 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
             if rate > 0 and rate < 10:
                 recs.append(f"  [yellow]:warning:[/yellow] cmd_vel at {rate:.0f}Hz — control loop may be too slow")
 
+        # Nav2 pipeline latency
+        ts = report._topic_timestamps
+        nav2_pipeline = [
+            ("/scan", "/local_costmap", "scan → costmap"),
+            ("/odom", "/amcl_pose", "odom → localization"),
+            ("/scan", "/cmd_vel", "scan → cmd_vel (full loop)"),
+        ]
+        _add_pipeline_latency_recs(recs, ts, nav2_pipeline)
+
     # --- Autoware detection ---
     autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
     autoware_topics = [t for t in topic_names if any(t.startswith(p) for p in autoware_prefixes)]
@@ -832,6 +847,25 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
             if "NavSatFix" in ttype and "sensing" in name.lower():
                 recs.append(f"  [green]:heavy_check_mark:[/green] GNSS ({name})")
 
+        # Autoware pipeline latency
+        ts = report._topic_timestamps
+        # Find actual topic names matching patterns
+        sensing_lidar = [t for t in topic_names if "sensing" in t and "lidar" in t.lower() and "PointCloud2" in topic_types.get(t, "")]
+        perception = [t for t in topic_names if t.startswith("/perception/")]
+        planning = [t for t in topic_names if t.startswith("/planning/")]
+        control = [t for t in topic_names if t.startswith("/control/")]
+
+        aw_pipeline = []
+        if sensing_lidar and perception:
+            aw_pipeline.append((sensing_lidar[0], perception[0], "sensing → perception"))
+        if perception and planning:
+            aw_pipeline.append((perception[0], planning[0], "perception → planning"))
+        if planning and control:
+            aw_pipeline.append((planning[0], control[0], "planning → control"))
+        if sensing_lidar and control:
+            aw_pipeline.append((sensing_lidar[0], control[0], "end-to-end (sensing → control)"))
+        _add_pipeline_latency_recs(recs, ts, aw_pipeline)
+
     # --- MoveIt detection ---
     moveit_indicators = {"/joint_states", "/display_planned_path", "/planning_scene",
                          "/move_group/result", "/execute_trajectory"}
@@ -850,4 +884,62 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
                     else:
                         recs.append(f"  [yellow]:warning:[/yellow] JointState ({name}) at {rate:.0f}Hz — 100Hz+ recommended for smooth trajectories")
 
+        # MoveIt pipeline latency
+        ts = report._topic_timestamps
+        moveit_pipeline = [
+            ("/joint_states", "/display_planned_path", "joint_states → planned_path"),
+        ]
+        _add_pipeline_latency_recs(recs, ts, moveit_pipeline)
+
     return recs
+
+
+def _add_pipeline_latency_recs(
+    recs: list[str],
+    topic_timestamps: dict[str, list[int]],
+    pipeline: list[tuple[str, str, str]],
+) -> None:
+    """Measure and report pipeline latency between topic pairs.
+
+    For each (input_topic, output_topic, label), computes the median delay
+    from input to the next output message, which estimates processing latency.
+    """
+    for input_topic, output_topic, label in pipeline:
+        ts_in = topic_timestamps.get(input_topic, [])
+        ts_out = topic_timestamps.get(output_topic, [])
+        if len(ts_in) < 5 or len(ts_out) < 5:
+            continue
+
+        arr_in = np.array(sorted(ts_in), dtype=np.int64)
+        arr_out = np.array(sorted(ts_out), dtype=np.int64)
+
+        # For each output message, find the most recent input message BEFORE it
+        # The difference is the processing latency
+        latencies_ms = []
+        j = 0
+        for t_out in arr_out:
+            # Advance j to the last input that's <= t_out
+            while j < len(arr_in) - 1 and arr_in[j + 1] <= t_out:
+                j += 1
+            if j < len(arr_in) and arr_in[j] <= t_out:
+                latency = (t_out - arr_in[j]) / 1e6  # ns to ms
+                latencies_ms.append(latency)
+
+        if not latencies_ms:
+            continue
+
+        median_lat = float(np.median(latencies_ms))
+        p95_lat = float(np.percentile(latencies_ms, 95))
+
+        if median_lat < 50:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95"
+            )
+        elif median_lat < 200:
+            recs.append(
+                f"  [yellow]:warning:[/yellow] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95 — may affect real-time performance"
+            )
+        else:
+            recs.append(
+                f"  [red]:x:[/red] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95 — too slow for real-time"
+            )
