@@ -106,6 +106,45 @@ def batch_anomaly_cmd(
 
 
 @app.command()
+def benchmark(
+    manifest: str = typer.Argument(..., help="Path to a benchmark manifest JSON file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
+    case: Optional[list[str]] = typer.Option(
+        None, "--case", help="Run only the named benchmark case(s)"
+    ),
+    fail_on_missing: bool = typer.Option(
+        False, "--fail-on-missing", help="Treat missing bag paths as failures"
+    ),
+) -> None:
+    """Run a manifest-driven benchmark suite for curated rosbag checks."""
+    from bagx.benchmark import print_benchmark_report, run_benchmark_suite
+
+    try:
+        report = run_benchmark_suite(
+            manifest,
+            fail_on_missing=fail_on_missing,
+            selected_cases=case,
+        )
+        print_benchmark_report(report, console)
+        if json_output:
+            with open(json_output, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+            console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
+        if report.failed_cases > 0:
+            raise typer.Exit(1)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error running benchmark suite: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
 def eval(
     bag: str = typer.Argument(..., help="Path to the bag file (.db3 or directory)"),
     json_output: Optional[str] = typer.Option(

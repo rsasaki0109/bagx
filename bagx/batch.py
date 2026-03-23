@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.anomaly import detect_anomalies
+from bagx.contracts import report_metadata
 from bagx.eval import EvalReport, evaluate_bag
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ def batch_anomaly(
         "total_anomalies": total_anomalies,
         "bags": results,
     }
+    aggregated.update(report_metadata("batch_anomaly"))
 
     if output_json:
         with open(output_json, "w") as f:

@@ -16,6 +16,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
+from bagx.contracts import report_metadata
 from bagx.reader import BagReader
 from bagx.topic_filters import is_sync_candidate
 
@@ -51,11 +52,13 @@ class ScenarioReport:
     scenarios: list[Scenario] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "bag_path": self.bag_path,
             "total_scenarios": self.total_scenarios,
             "scenarios": [asdict(s) for s in self.scenarios],
         }
+        data.update(report_metadata("scenario"))
+        return data
 
 
 def detect_scenarios(

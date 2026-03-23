@@ -29,3 +29,6 @@ jobs:
 
       - name: Run tests
         run: pytest --cov=bagx --cov-report=term-missing --cov-report=xml
+
+      - name: Run benchmark smoke suite
+        run: python3 scripts/run_benchmark_smoke.py

@@ -16,6 +16,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
+from bagx.contracts import report_metadata
 from bagx.reader import BagReader, Message
 from bagx.topic_filters import is_sync_candidate
 
@@ -111,6 +112,7 @@ class EvalReport:
         d["recommendations"] = [
             _strip_rich_markup(r) for r in generate_recommendations(self)
         ]
+        d.update(report_metadata("eval"))
         return d
 
 

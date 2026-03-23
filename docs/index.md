@@ -25,6 +25,9 @@ bagx export recording.db3 --ai --format parquet
 
 # Batch-evaluate a dataset
 bagx batch eval ./recordings/*.db3 --csv summary.csv
+
+# Re-run a benchmark suite on curated public/private bags
+bagx benchmark benchmarks/open_data_suite.json
 ```
 
 ## Real-world results

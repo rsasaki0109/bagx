@@ -218,7 +218,33 @@ class TestMlExport:
         assert "lidar" not in names
 
 
-# ── Example 7: Asking questions (bagx ask) ──
+# ── Example 7: Re-running curated benchmark suites (bagx benchmark) ──
+
+
+class TestBenchmarkSuites:
+    """bagx benchmark suite.json → reproducible regression check."""
+
+    def test_benchmark_suite_runs(self, nav2_bag: Path, tmp_path: Path):
+        manifest_path = tmp_path / "benchmark.json"
+        manifest_path.write_text(json.dumps({
+            "suite_name": "readme-suite",
+            "cases": [
+                {
+                    "name": "nav2",
+                    "bag_path": str(nav2_bag),
+                    "expect": {"required_domains": ["Nav2"]},
+                }
+            ],
+        }))
+
+        result = runner.invoke(app, ["benchmark", str(manifest_path)])
+
+        assert result.exit_code == 0
+        assert "Benchmark Suite" in result.output
+        assert "passed" in result.output
+
+
+# ── Example 8: Asking questions (bagx ask) ──
 
 
 class TestAskQuestions:
