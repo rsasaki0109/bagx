@@ -120,6 +120,25 @@ class TestSensorDropout:
         dropouts = [s for s in report.scenarios if s.type == "sensor_dropout"]
         assert len(dropouts) == 0
 
+    def test_sparse_low_rate_topic_is_not_treated_as_dropout(self, tmp_path: Path):
+        """Natural low-rate topics should not be flagged when their regular period is slow."""
+        from tests.conftest import _create_db3, build_stub_cdr
+
+        topics = [{"name": "/global_costmap/costmap", "type": "nav_msgs/msg/OccupancyGrid", "format": "cdr"}]
+        messages = []
+        base_ns = 1_700_000_000_000_000_000
+
+        for i in range(12):
+            ts = base_ns + i * 2_000_000_000  # 0.5Hz
+            messages.append({"topic": "/global_costmap/costmap", "timestamp_ns": ts, "data": build_stub_cdr()})
+
+        bag_path = tmp_path / "low_rate_costmap.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_scenarios(str(bag_path), dropout_threshold_sec=2.0)
+        dropouts = [s for s in report.scenarios if s.type == "sensor_dropout"]
+        assert dropouts == []
+
 
 class TestHighDynamics:
     def test_high_dynamics_detected(self, tmp_path: Path):
@@ -233,3 +252,85 @@ class TestScenarioReport:
         assert s.start_time_sec > 0
         assert s.end_time_sec > s.start_time_sec
         assert s.duration_sec > 0
+
+
+class TestScenarioTopicFiltering:
+    def test_sync_degraded_excludes_clock_and_cmd_vel_topics(self, tmp_path: Path):
+        """Control/meta topics should not drive sync degradation scenarios."""
+        from tests.conftest import _create_db3, build_odometry_cdr, build_stub_cdr
+
+        topics = [
+            {"name": "/clock", "type": "rosgraph_msgs/msg/Clock", "format": "cdr"},
+            {"name": "/controller_server/cmd_vel", "type": "geometry_msgs/msg/TwistStamped", "format": "cdr"},
+            {"name": "/robot/odom", "type": "nav_msgs/msg/Odometry", "format": "cdr"},
+            {"name": "/robot/scan", "type": "sensor_msgs/msg/LaserScan", "format": "cdr"},
+        ]
+        messages = []
+        base_ns = 1_700_000_400_000_000_000
+
+        for i in range(200):
+            clock_ts = base_ns + i * 10_000_000
+            messages.append({"topic": "/clock", "timestamp_ns": clock_ts, "data": build_stub_cdr()})
+
+        for i in range(10):
+            cmd_ts = base_ns + i * 500_000_000
+            messages.append({"topic": "/controller_server/cmd_vel", "timestamp_ns": cmd_ts, "data": build_stub_cdr()})
+
+        for i in range(80):
+            odom_ts = base_ns + i * 50_000_000
+            odom = build_odometry_cdr(
+                stamp_sec=odom_ts // 1_000_000_000,
+                stamp_nanosec=odom_ts % 1_000_000_000,
+                position=(i * 0.02, 0.0, 0.0),
+                orientation=(0.0, 0.0, 0.0, 1.0),
+                linear=(0.4, 0.0, 0.0),
+                angular=(0.0, 0.0, 0.05),
+            )
+            messages.append({"topic": "/robot/odom", "timestamp_ns": odom_ts, "data": odom})
+
+        for i in range(40):
+            scan_ts = base_ns + i * 100_000_000 + 20_000_000
+            messages.append({"topic": "/robot/scan", "timestamp_ns": scan_ts, "data": build_stub_cdr()})
+
+        messages.sort(key=lambda m: m["timestamp_ns"])
+        bag_path = tmp_path / "scenario_nav2_filtered.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_scenarios(str(bag_path))
+        descriptions = "\n".join(s.description for s in report.scenarios if s.type == "sync_degraded")
+        assert "/clock" not in descriptions
+        assert "cmd_vel" not in descriptions
+
+    def test_sync_degraded_uses_true_nearest_neighbor_delay(self, tmp_path: Path):
+        """High-rate IMU against lower-rate scan should not explode into bag-length delays."""
+        from tests.conftest import _create_db3, build_imu_cdr, build_stub_cdr
+
+        topics = [
+            {"name": "/imu", "type": "sensor_msgs/msg/Imu", "format": "cdr"},
+            {"name": "/scan", "type": "sensor_msgs/msg/LaserScan", "format": "cdr"},
+        ]
+        messages = []
+        base_ns = 1_700_000_500_000_000_000
+
+        for i in range(1000):
+            imu_ts = base_ns + i * 5_000_000  # 200Hz
+            messages.append({
+                "topic": "/imu",
+                "timestamp_ns": imu_ts,
+                "data": build_imu_cdr(
+                    stamp_sec=imu_ts // 1_000_000_000,
+                    stamp_nanosec=imu_ts % 1_000_000_000,
+                ),
+            })
+
+        for i in range(50):
+            scan_ts = base_ns + i * 100_000_000 + 20_000_000  # 10Hz with 20ms offset
+            messages.append({"topic": "/scan", "timestamp_ns": scan_ts, "data": build_stub_cdr()})
+
+        messages.sort(key=lambda m: m["timestamp_ns"])
+        bag_path = tmp_path / "scenario_sync_nearest.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_scenarios(str(bag_path), sync_delay_threshold_ms=100.0)
+        sync_degraded = [s for s in report.scenarios if s.type == "sync_degraded"]
+        assert sync_degraded == []

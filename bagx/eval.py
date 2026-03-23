@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.reader import BagReader, Message
+from bagx.topic_filters import is_sync_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ class EvalReport:
     imu: ImuMetrics | None = None
     imu_topic: str = ""
     sync: SyncMetrics | None = None
+    domain_score: float | None = None
     overall_score: float = 0.0
     topic_info: dict = field(default_factory=dict)  # {name: {"type": str, "count": int, "rate_hz": float}}
     _topic_timestamps: dict = field(default_factory=dict, repr=False)  # internal, not serialized
@@ -212,19 +214,29 @@ def evaluate_bag(
             "rate_hz": round(rate_hz, 1),
         }
 
+    domains = _detect_domain_names(report.topic_info)
+
     # Evaluate sync
-    sync_topics = [t for t in all_topics if len(topic_timestamps.get(t, [])) > 10]
-    if len(sync_topics) >= 2:
+    sync_topics = [
+        t
+        for t in all_topics
+        if len(topic_timestamps.get(t, [])) > 10
+        and is_sync_candidate(t, summary.topics[t].type)
+    ]
+    if len(sync_topics) >= 2 and not ({"Nav2", "MoveIt"} & domains):
         report.sync = _evaluate_sync(topic_timestamps, sync_topics, config)
 
     # Overall score
+    report.domain_score = _compute_domain_score(report)
     scores = []
     if report.gnss:
         scores.append(report.gnss.score)
     if report.imu:
         scores.append(report.imu.score)
-    if report.sync:
+    if report.sync and not ({"Nav2", "MoveIt"} & domains):
         scores.append(report.sync.score)
+    if report.domain_score is not None:
+        scores.append(report.domain_score)
 
     report.overall_score = float(np.mean(scores)) if scores else 0.0
 
@@ -393,28 +405,19 @@ def _evaluate_imu(messages: list[Message], config: EvalConfig) -> ImuMetrics:
     )
 
     # Score: low noise is good
-    accel_noise = (
-        np.mean(
-            [
-                n
-                for n in [metrics.accel_noise_x, metrics.accel_noise_y, metrics.accel_noise_z]
-                if not math.isnan(n)
-            ]
-        )
-        if accel_x
-        else 1.0
-    )
-    gyro_noise = (
-        np.mean(
-            [
-                n
-                for n in [metrics.gyro_noise_x, metrics.gyro_noise_y, metrics.gyro_noise_z]
-                if not math.isnan(n)
-            ]
-        )
-        if gyro_x
-        else 1.0
-    )
+    valid_accel_noise = [
+        n
+        for n in [metrics.accel_noise_x, metrics.accel_noise_y, metrics.accel_noise_z]
+        if not math.isnan(n)
+    ]
+    accel_noise = float(np.mean(valid_accel_noise)) if valid_accel_noise else 1.0
+
+    valid_gyro_noise = [
+        n
+        for n in [metrics.gyro_noise_x, metrics.gyro_noise_y, metrics.gyro_noise_z]
+        if not math.isnan(n)
+    ]
+    gyro_noise = float(np.mean(valid_gyro_noise)) if valid_gyro_noise else 1.0
 
     # Normalize using config thresholds
     accel_score = max(
@@ -498,6 +501,15 @@ def _evaluate_sync(
     for t1, t2 in pairs[:5]:  # Limit to 5 pairs
         ts1 = np.array(sorted(topic_timestamps[t1]), dtype=np.int64)
         ts2 = np.array(sorted(topic_timestamps[t2]), dtype=np.int64)
+        overlap_start = max(int(ts1[0]), int(ts2[0]))
+        overlap_end = min(int(ts1[-1]), int(ts2[-1]))
+        if overlap_end <= overlap_start:
+            continue
+
+        ts1 = ts1[(ts1 >= overlap_start) & (ts1 <= overlap_end)]
+        ts2 = ts2[(ts2 >= overlap_start) & (ts2 <= overlap_end)]
+        if len(ts1) < 5 or len(ts2) < 5:
+            continue
 
         # For each message in t1, find nearest in t2
         delays = []
@@ -629,6 +641,14 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
             "",
         )
         console.print(table)
+
+    if report.domain_score is not None:
+        domain_color = (
+            "green" if report.domain_score >= 70 else "yellow" if report.domain_score >= 40 else "red"
+        )
+        console.print(
+            f"[bold]Domain Score: [{domain_color}]{report.domain_score:.1f}/100[/{domain_color}][/bold]"
+        )
 
     color = (
         "green" if report.overall_score >= 70 else "yellow" if report.overall_score >= 40 else "red"
@@ -776,89 +796,258 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
     if not topics:
         return recs
 
-    topic_names = set(topics.keys())
     topic_types = {t: info["type"] for t, info in topics.items()}
 
-    # --- Nav2 detection ---
-    nav2_indicators = {"/cmd_vel", "/odom", "/scan", "/local_costmap", "/global_costmap",
-                       "/plan", "/amcl_pose", "/map", "/behavior_tree_log"}
-    nav2_found = topic_names & nav2_indicators
-    nav2_type_match = any("LaserScan" in t for t in topic_types.values())
+    odom_topics = _select_topics(
+        topics,
+        type_markers=("odometry",),
+        suffixes=("/odom",),
+        contains=("odometry/filtered", "/odometry/"),
+    )
+    scan_topics = _select_topics(
+        topics,
+        type_markers=("laserscan",),
+        suffixes=("/scan",),
+        contains=("/scan_",),
+    )
+    cmd_vel_topics = _select_topics(
+        topics,
+        type_markers=("twist", "twiststamped"),
+        suffixes=("/cmd_vel", "/cmd_vel_smoothed"),
+        contains=("cmd_vel",),
+    )
+    local_costmap_topics = _select_topics(
+        topics,
+        suffixes=("/local_costmap", "/local_costmap/costmap"),
+        contains=("local_costmap",),
+    )
+    global_costmap_topics = _select_topics(
+        topics,
+        suffixes=("/global_costmap", "/global_costmap/costmap"),
+        contains=("global_costmap",),
+    )
+    plan_topics = _select_topics(
+        topics,
+        suffixes=("/plan", "/global_plan"),
+        contains=("planner_server/plan", "/plan", "trajectory"),
+    )
+    amcl_topics = _select_topics(
+        topics,
+        type_markers=("posewithcovariancestamped",),
+        suffixes=("/amcl_pose",),
+        contains=("amcl_pose",),
+    )
+    map_topics = _select_topics(
+        topics,
+        type_markers=("occupancygrid",),
+        suffixes=("/map",),
+        contains=("/map",),
+    )
+    behavior_tree_topics = _select_topics(
+        topics,
+        suffixes=("/behavior_tree_log",),
+        contains=("behavior_tree_log",),
+    )
+    navigate_status_topics = _select_topics(
+        topics,
+        contains=("navigate_to_pose/_action/status",),
+    )
+    navigate_feedback_topics = _select_topics(
+        topics,
+        contains=("navigate_to_pose/_action/feedback",),
+    )
 
-    if len(nav2_found) >= 2 or (nav2_type_match and "/odom" in topic_names):
+    nav2_evidence = sum(
+        bool(matches)
+        for matches in [
+            odom_topics,
+            scan_topics,
+            cmd_vel_topics,
+            local_costmap_topics,
+            global_costmap_topics,
+            plan_topics,
+            amcl_topics,
+            map_topics,
+            behavior_tree_topics,
+            navigate_status_topics,
+            navigate_feedback_topics,
+        ]
+    )
+
+    # --- Nav2 detection ---
+    if nav2_evidence >= 2 or (scan_topics and odom_topics):
         recs.append("[bold cyan]Nav2 topics detected[/bold cyan]")
 
         # Odom check
-        for name in topic_names:
-            if "odom" in name.lower() and name in topics:
-                rate = topics[name]["rate_hz"]
-                if rate > 0:
-                    if rate >= 20:
-                        recs.append(f"  [green]:heavy_check_mark:[/green] Odometry ({name}) at {rate:.0f}Hz — good for Nav2")
-                    else:
-                        recs.append(f"  [yellow]:warning:[/yellow] Odometry ({name}) at {rate:.0f}Hz — Nav2 works best at 20Hz+")
+        for name in odom_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 20:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] Odometry ({name}) at {rate:.0f}Hz — good for Nav2")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] Odometry ({name}) at {rate:.0f}Hz — Nav2 works best at 20Hz+")
 
         # LaserScan check
-        for name, ttype in topic_types.items():
-            if "LaserScan" in ttype and name in topics:
-                rate = topics[name]["rate_hz"]
-                if rate > 0:
-                    if rate >= 10:
-                        recs.append(f"  [green]:heavy_check_mark:[/green] LaserScan ({name}) at {rate:.0f}Hz — good for costmap")
-                    else:
-                        recs.append(f"  [yellow]:warning:[/yellow] LaserScan ({name}) at {rate:.0f}Hz — 10Hz+ recommended for costmap updates")
+        for name in scan_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 10:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] LaserScan ({name}) at {rate:.0f}Hz — good for costmap")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] LaserScan ({name}) at {rate:.0f}Hz — 10Hz+ recommended for costmap updates")
+
+        # Costmap publication checks
+        for name in local_costmap_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 1:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] Local costmap ({name}) at {rate:.1f}Hz")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] Local costmap ({name}) at {rate:.1f}Hz — low refresh for local obstacle updates")
+        for name in global_costmap_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 0.2:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] Global costmap ({name}) at {rate:.1f}Hz")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] Global costmap ({name}) at {rate:.1f}Hz — planner map refresh is very sparse")
 
         # cmd_vel check
-        if "/cmd_vel" in topic_names:
-            rate = topics["/cmd_vel"]["rate_hz"]
-            if rate > 0 and rate < 10:
+        for name in cmd_vel_topics:
+            rate = topics[name]["rate_hz"]
+            if 0 < rate < 10:
                 recs.append(f"  [yellow]:warning:[/yellow] cmd_vel at {rate:.0f}Hz — control loop may be too slow")
+
+        if plan_topics:
+            for name in plan_topics:
+                recs.append(
+                    f"  [green]:heavy_check_mark:[/green] Global plan ({name}) recorded {topics[name]['count']} times — planner output is visible"
+                )
+        else:
+            recs.append(
+                "  [yellow]:warning:[/yellow] No global plan topic recorded — planner activity is hard to inspect from this bag"
+            )
+
+        if navigate_status_topics:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] NavigateToPose status ({navigate_status_topics[0]}) recorded — goal lifecycle is observable"
+            )
+        elif navigate_feedback_topics:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] NavigateToPose feedback ({navigate_feedback_topics[0]}) recorded"
+            )
+        else:
+            recs.append(
+                "  [yellow]:warning:[/yellow] No NavigateToPose action topic recorded — goal-level debugging is limited"
+            )
 
         # Nav2 pipeline latency
         ts = report._topic_timestamps
-        nav2_pipeline = [
-            ("/scan", "/local_costmap", "scan → costmap"),
-            ("/odom", "/amcl_pose", "odom → localization"),
-            ("/scan", "/cmd_vel", "scan → cmd_vel (full loop)"),
-        ]
+        nav2_pipeline = []
+        if scan_topics and local_costmap_topics:
+            nav2_pipeline.append((scan_topics[0], local_costmap_topics[0], "scan → costmap"))
+        if odom_topics and amcl_topics:
+            nav2_pipeline.append((odom_topics[0], amcl_topics[0], "odom → localization"))
+        if scan_topics and cmd_vel_topics:
+            nav2_pipeline.append((scan_topics[0], cmd_vel_topics[0], "scan → cmd_vel (full loop)"))
         _add_pipeline_latency_recs(recs, ts, nav2_pipeline)
+        if plan_topics and cmd_vel_topics:
+            _add_event_response_latency_recs(
+                recs,
+                ts,
+                [(plan_topics[0], cmd_vel_topics[0], "plan → cmd_vel onset")],
+                min_input_samples=1,
+                max_response_ms=1000.0,
+            )
 
     # --- Autoware detection ---
     autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
-    autoware_topics = [t for t in topic_names if any(t.startswith(p) for p in autoware_prefixes)]
+    autoware_topics = [
+        name for name in topics if any(name.startswith(prefix) for prefix in autoware_prefixes)
+    ]
 
     if len(autoware_topics) >= 1:
         recs.append("[bold cyan]Autoware topics detected[/bold cyan]")
 
         # Camera check
-        for name, ttype in topic_types.items():
-            if ("Image" in ttype or "CompressedImage" in ttype) and "sensing" in name.lower():
-                rate = topics[name]["rate_hz"]
-                if rate > 0:
-                    if rate >= 15:
-                        recs.append(f"  [green]:heavy_check_mark:[/green] Camera ({name}) at {rate:.0f}Hz")
-                    else:
-                        recs.append(f"  [yellow]:warning:[/yellow] Camera ({name}) at {rate:.0f}Hz — 15Hz+ recommended for perception")
+        camera_topics = _select_topics(
+            topics,
+            type_markers=("image", "compressedimage"),
+            prefixes=("/sensing/",),
+            contains=("/camera/", "image"),
+        )
+        for name in camera_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 15:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] Camera ({name}) at {rate:.0f}Hz")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] Camera ({name}) at {rate:.0f}Hz — 15Hz+ recommended for perception")
 
         # LiDAR check under /sensing
-        for name, ttype in topic_types.items():
-            if "PointCloud2" in ttype and "sensing" in name.lower():
-                rate = topics[name]["rate_hz"]
-                if rate > 0:
-                    recs.append(f"  [green]:heavy_check_mark:[/green] LiDAR ({name}) at {rate:.0f}Hz")
+        lidar_topics = _select_topics(
+            topics,
+            type_markers=("pointcloud2",),
+            prefixes=("/sensing/",),
+            contains=("lidar", "pointcloud"),
+        )
+        for name in lidar_topics:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                recs.append(f"  [green]:heavy_check_mark:[/green] LiDAR ({name}) at {rate:.0f}Hz")
 
         # GNSS under /sensing
-        for name, ttype in topic_types.items():
-            if "NavSatFix" in ttype and "sensing" in name.lower():
+        gnss_topics = _select_topics(
+            topics,
+            type_markers=("navsatfix",),
+            prefixes=("/sensing/",),
+            contains=("gnss",),
+        )
+        for name in gnss_topics:
+            if "navsatfix" in topic_types[name].lower():
                 recs.append(f"  [green]:heavy_check_mark:[/green] GNSS ({name})")
 
         # Autoware pipeline latency
         ts = report._topic_timestamps
         # Find actual topic names matching patterns
-        sensing_lidar = [t for t in topic_names if "sensing" in t and "lidar" in t.lower() and "PointCloud2" in topic_types.get(t, "")]
-        perception = [t for t in topic_names if t.startswith("/perception/")]
-        planning = [t for t in topic_names if t.startswith("/planning/")]
-        control = [t for t in topic_names if t.startswith("/control/")]
+        sensing_lidar = lidar_topics
+        perception = _select_topics(topics, prefixes=("/perception/",))
+        planning = _select_topics(
+            topics,
+            prefixes=("/planning/",),
+            contains=("trajectory", "path"),
+        ) or _select_topics(topics, prefixes=("/planning/",))
+        control = _select_topics(
+            topics,
+            prefixes=("/control/",),
+            contains=("control_cmd", "command", "trajectory_follower"),
+        ) or _select_topics(topics, prefixes=("/control/",))
+
+        for name in planning:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                recs.append(f"  [green]:heavy_check_mark:[/green] Planning output ({name}) at {rate:.0f}Hz")
+
+        for name in control:
+            rate = topics[name]["rate_hz"]
+            if rate > 0:
+                if rate >= 10:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] Control command ({name}) at {rate:.0f}Hz")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] Control command ({name}) at {rate:.0f}Hz — low for closed-loop vehicle control")
+
+        if not planning and not control:
+            recs.append(
+                "  [dim]:information_source:[/dim] Sensing/localization-only Autoware bag — skipping planning/control checks"
+            )
+        elif not planning:
+            recs.append(
+                "  [yellow]:warning:[/yellow] Control topics are present but no planning topic was recorded"
+            )
+        elif not control:
+            recs.append(
+                "  [yellow]:warning:[/yellow] Planning topics are present but no control topic was recorded"
+            )
 
         aw_pipeline = []
         if sensing_lidar and perception:
@@ -872,38 +1061,459 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         _add_pipeline_latency_recs(recs, ts, aw_pipeline)
 
     # --- MoveIt detection ---
-    moveit_indicators = {"/joint_states", "/display_planned_path", "/planning_scene",
-                         "/move_group/result", "/execute_trajectory"}
-    moveit_type_match = any("JointState" in t for t in topic_types.values())
-    moveit_name_match = any("joint_states" in t for t in topic_names)
-    moveit_found = topic_names & moveit_indicators
+    joint_state_topics = _select_topics(
+        topics,
+        type_markers=("jointstate",),
+        suffixes=("/joint_states",),
+        contains=("joint_states",),
+    )
+    planned_path_topics = _select_topics(
+        topics,
+        type_markers=("displaytrajectory",),
+        suffixes=("/display_planned_path",),
+        contains=("display_planned_path", "planned_path"),
+    )
+    planning_scene_topics = _select_topics(
+        topics,
+        type_markers=("planningscene",),
+        suffixes=("/planning_scene", "/monitored_planning_scene"),
+        contains=("planning_scene", "monitored_planning_scene"),
+    )
+    move_group_result_topics = _select_topics(
+        topics,
+        suffixes=("/move_group/result",),
+        contains=("move_group/result",),
+    )
+    move_action_status_topics = _select_topics(
+        topics,
+        contains=("move_action/_action/status",),
+    )
+    move_action_feedback_topics = _select_topics(
+        topics,
+        contains=("move_action/_action/feedback",),
+    )
+    execute_action_status_topics = _select_topics(
+        topics,
+        contains=("execute_trajectory/_action/status",),
+    )
+    execute_action_feedback_topics = _select_topics(
+        topics,
+        contains=("execute_trajectory/_action/feedback",),
+    )
+    controller_action_status_topics = _select_topics(
+        topics,
+        contains=("follow_joint_trajectory/_action/status",),
+    )
+    controller_action_feedback_topics = _select_topics(
+        topics,
+        contains=("follow_joint_trajectory/_action/feedback",),
+    )
 
-    if len(moveit_found) >= 2 or (moveit_type_match and (len(moveit_found) >= 1 or moveit_name_match)):
+    moveit_evidence = sum(
+        bool(matches)
+        for matches in [
+            joint_state_topics,
+            planned_path_topics,
+            planning_scene_topics,
+            move_group_result_topics,
+            move_action_status_topics,
+            move_action_feedback_topics,
+            execute_action_status_topics,
+            execute_action_feedback_topics,
+            controller_action_status_topics,
+            controller_action_feedback_topics,
+        ]
+    )
+
+    if moveit_evidence >= 2 or (
+        joint_state_topics and (
+            planned_path_topics
+            or planning_scene_topics
+            or move_group_result_topics
+            or move_action_status_topics
+            or execute_action_status_topics
+            or controller_action_status_topics
+        )
+    ):
         recs.append("[bold cyan]MoveIt topics detected[/bold cyan]")
 
-        for name, ttype in topic_types.items():
-            if "JointState" in ttype and name in topics:
-                rate = topics[name]["rate_hz"]
-                if 0 < rate < 100_000:  # sanity check for broken timestamps
-                    if rate >= 100:
-                        recs.append(f"  [green]:heavy_check_mark:[/green] JointState ({name}) at {rate:.0f}Hz — good for motion planning")
-                    else:
-                        recs.append(f"  [yellow]:warning:[/yellow] JointState ({name}) at {rate:.0f}Hz — 100Hz+ recommended for smooth trajectories")
+        for name in joint_state_topics:
+            rate = topics[name]["rate_hz"]
+            if 0 < rate < 100_000:  # sanity check for broken timestamps
+                if rate >= 100:
+                    recs.append(f"  [green]:heavy_check_mark:[/green] JointState ({name}) at {rate:.0f}Hz — good for motion planning")
+                else:
+                    recs.append(f"  [yellow]:warning:[/yellow] JointState ({name}) at {rate:.0f}Hz — 100Hz+ recommended for smooth trajectories")
+
+        if move_action_status_topics or move_action_feedback_topics:
+            name = (move_action_status_topics or move_action_feedback_topics)[0]
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] MoveGroup action activity recorded on {name}"
+            )
+
+        if execute_action_status_topics or execute_action_feedback_topics:
+            name = (execute_action_status_topics or execute_action_feedback_topics)[0]
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] execute_trajectory action activity recorded on {name}"
+            )
+
+        if controller_action_status_topics or controller_action_feedback_topics:
+            name = (controller_action_status_topics or controller_action_feedback_topics)[0]
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Joint trajectory controller activity recorded on {name}"
+            )
+        elif planned_path_topics:
+            recs.append(
+                "  [yellow]:warning:[/yellow] Planned path is present but trajectory execution was not recorded"
+            )
 
         # MoveIt pipeline latency
         ts = report._topic_timestamps
-        moveit_pipeline = [
-            ("/joint_states", "/display_planned_path", "joint_states → planned_path"),
-        ]
-        _add_pipeline_latency_recs(recs, ts, moveit_pipeline)
+        moveit_pipeline = []
+        if joint_state_topics and planned_path_topics:
+            moveit_pipeline.append((joint_state_topics[0], planned_path_topics[0], "joint_states → planned_path"))
+        _add_pipeline_latency_recs(recs, ts, moveit_pipeline, min_output_samples=1)
+        if planned_path_topics and controller_action_status_topics:
+            _add_event_response_latency_recs(
+                recs,
+                ts,
+                [(planned_path_topics[0], controller_action_status_topics[0], "planned_path → arm execution")],
+                min_input_samples=1,
+                max_response_ms=5000.0,
+            )
+        elif planned_path_topics and execute_action_status_topics:
+            _add_event_response_latency_recs(
+                recs,
+                ts,
+                [(planned_path_topics[0], execute_action_status_topics[0], "planned_path → execute_trajectory")],
+                min_input_samples=1,
+                max_response_ms=5000.0,
+            )
 
     return recs
+
+
+def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
+    """Return high-level framework names inferred from topic names/types."""
+    if not topics:
+        return set()
+
+    names: set[str] = set()
+
+    odom_topics = _select_topics(
+        topics,
+        type_markers=("odometry",),
+        suffixes=("/odom",),
+        contains=("odometry/filtered", "/odometry/"),
+    )
+    scan_topics = _select_topics(
+        topics,
+        type_markers=("laserscan",),
+        suffixes=("/scan",),
+        contains=("/scan_",),
+    )
+    cmd_vel_topics = _select_topics(
+        topics,
+        type_markers=("twist", "twiststamped"),
+        suffixes=("/cmd_vel", "/cmd_vel_smoothed"),
+        contains=("cmd_vel",),
+    )
+    local_costmap_topics = _select_topics(
+        topics,
+        suffixes=("/local_costmap", "/local_costmap/costmap"),
+        contains=("local_costmap",),
+    )
+    global_costmap_topics = _select_topics(
+        topics,
+        suffixes=("/global_costmap", "/global_costmap/costmap"),
+        contains=("global_costmap",),
+    )
+    plan_topics = _select_topics(
+        topics,
+        suffixes=("/plan", "/global_plan"),
+        contains=("planner_server/plan", "/plan", "trajectory"),
+    )
+    amcl_topics = _select_topics(
+        topics,
+        type_markers=("posewithcovariancestamped",),
+        suffixes=("/amcl_pose",),
+        contains=("amcl_pose",),
+    )
+    navigate_status_topics = _select_topics(
+        topics,
+        contains=("navigate_to_pose/_action/status",),
+    )
+    navigate_feedback_topics = _select_topics(
+        topics,
+        contains=("navigate_to_pose/_action/feedback",),
+    )
+    nav2_evidence = sum(
+        bool(matches)
+        for matches in [
+            odom_topics,
+            scan_topics,
+            cmd_vel_topics,
+            local_costmap_topics,
+            global_costmap_topics,
+            plan_topics,
+            amcl_topics,
+            navigate_status_topics,
+            navigate_feedback_topics,
+        ]
+    )
+    if nav2_evidence >= 2 or (scan_topics and odom_topics):
+        names.add("Nav2")
+
+    autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
+    autoware_topics = [
+        name for name in topics if any(name.startswith(prefix) for prefix in autoware_prefixes)
+    ]
+    if autoware_topics:
+        names.add("Autoware")
+
+    joint_state_topics = _select_topics(
+        topics,
+        type_markers=("jointstate",),
+        suffixes=("/joint_states",),
+        contains=("joint_states",),
+    )
+    planned_path_topics = _select_topics(
+        topics,
+        type_markers=("displaytrajectory",),
+        suffixes=("/display_planned_path",),
+        contains=("display_planned_path", "planned_path"),
+    )
+    planning_scene_topics = _select_topics(
+        topics,
+        type_markers=("planningscene",),
+        suffixes=("/planning_scene", "/monitored_planning_scene"),
+        contains=("planning_scene", "monitored_planning_scene"),
+    )
+    move_action_status_topics = _select_topics(
+        topics,
+        contains=("move_action/_action/status",),
+    )
+    execute_action_status_topics = _select_topics(
+        topics,
+        contains=("execute_trajectory/_action/status",),
+    )
+    controller_action_status_topics = _select_topics(
+        topics,
+        contains=("follow_joint_trajectory/_action/status",),
+    )
+    moveit_evidence = sum(
+        bool(matches)
+        for matches in [
+            joint_state_topics,
+            planned_path_topics,
+            planning_scene_topics,
+            move_action_status_topics,
+            execute_action_status_topics,
+            controller_action_status_topics,
+        ]
+    )
+    if moveit_evidence >= 2 or (joint_state_topics and planned_path_topics):
+        names.add("MoveIt")
+
+    return names
+
+
+def _compute_domain_score(report: EvalReport) -> float | None:
+    """Compute framework-aware score when generic SLAM metrics are not representative."""
+    topics = report.topic_info
+    if not topics:
+        return None
+
+    scores: list[float] = []
+    domains = _detect_domain_names(topics)
+
+    if "Nav2" in domains:
+        odom_topics = _select_topics(
+            topics,
+            type_markers=("odometry",),
+            suffixes=("/odom",),
+            contains=("odometry/filtered", "/odometry/"),
+        )
+        scan_topics = _select_topics(
+            topics,
+            type_markers=("laserscan",),
+            suffixes=("/scan",),
+            contains=("/scan_",),
+        )
+        local_costmap_topics = _select_topics(
+            topics,
+            suffixes=("/local_costmap", "/local_costmap/costmap"),
+            contains=("local_costmap",),
+        )
+        global_costmap_topics = _select_topics(
+            topics,
+            suffixes=("/global_costmap", "/global_costmap/costmap"),
+            contains=("global_costmap",),
+        )
+        plan_topics = _select_topics(
+            topics,
+            suffixes=("/plan", "/global_plan"),
+            contains=("planner_server/plan", "/plan", "trajectory"),
+        )
+        navigate_topics = _select_topics(
+            topics,
+            contains=("navigate_to_pose/_action/status", "navigate_to_pose/_action/feedback"),
+        )
+
+        nav2_scores = []
+        if odom_topics:
+            nav2_scores.append(_rate_goal_score(topics[odom_topics[0]]["rate_hz"], 20.0))
+        if scan_topics:
+            nav2_scores.append(_rate_goal_score(topics[scan_topics[0]]["rate_hz"], 10.0))
+        if local_costmap_topics:
+            nav2_scores.append(_rate_goal_score(topics[local_costmap_topics[0]]["rate_hz"], 1.0))
+        if global_costmap_topics:
+            nav2_scores.append(_rate_goal_score(topics[global_costmap_topics[0]]["rate_hz"], 0.2))
+        nav2_scores.append(100.0 if plan_topics else 0.0)
+        nav2_scores.append(100.0 if navigate_topics else 0.0)
+        scores.append(float(np.mean(nav2_scores)))
+
+    if "Autoware" in domains:
+        camera_topics = _select_topics(
+            topics,
+            type_markers=("image", "compressedimage"),
+            prefixes=("/sensing/",),
+            contains=("/camera/", "image"),
+        )
+        lidar_topics = _select_topics(
+            topics,
+            type_markers=("pointcloud2",),
+            prefixes=("/sensing/",),
+            contains=("lidar", "pointcloud"),
+        )
+        gnss_topics = _select_topics(
+            topics,
+            type_markers=("navsatfix",),
+            prefixes=("/sensing/",),
+            contains=("gnss",),
+        )
+        planning_topics = _select_topics(
+            topics,
+            prefixes=("/planning/",),
+            contains=("trajectory", "path"),
+        ) or _select_topics(topics, prefixes=("/planning/",))
+        control_topics = _select_topics(
+            topics,
+            prefixes=("/control/",),
+            contains=("control_cmd", "command", "trajectory_follower"),
+        ) or _select_topics(topics, prefixes=("/control/",))
+
+        autoware_scores = []
+        autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 15.0) for name in camera_topics)
+        autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 10.0) for name in lidar_topics)
+        if gnss_topics:
+            autoware_scores.append(100.0)
+        if planning_topics or control_topics:
+            autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 5.0) for name in planning_topics)
+            autoware_scores.extend(_rate_goal_score(topics[name]["rate_hz"], 10.0) for name in control_topics)
+            if planning_topics and not control_topics:
+                autoware_scores.append(0.0)
+            if control_topics and not planning_topics:
+                autoware_scores.append(0.0)
+        if autoware_scores:
+            scores.append(float(np.mean(autoware_scores)))
+
+    if "MoveIt" in domains:
+        joint_state_topics = _select_topics(
+            topics,
+            type_markers=("jointstate",),
+            suffixes=("/joint_states",),
+            contains=("joint_states",),
+        )
+        planned_path_topics = _select_topics(
+            topics,
+            type_markers=("displaytrajectory",),
+            suffixes=("/display_planned_path",),
+            contains=("display_planned_path", "planned_path"),
+        )
+        move_action_topics = _select_topics(
+            topics,
+            contains=("move_action/_action/status", "move_action/_action/feedback"),
+        )
+        execute_action_topics = _select_topics(
+            topics,
+            contains=("execute_trajectory/_action/status", "execute_trajectory/_action/feedback"),
+        )
+        controller_action_topics = _select_topics(
+            topics,
+            contains=("follow_joint_trajectory/_action/status", "follow_joint_trajectory/_action/feedback"),
+        )
+
+        moveit_scores = []
+        if joint_state_topics:
+            moveit_scores.append(_rate_goal_score(topics[joint_state_topics[0]]["rate_hz"], 100.0))
+        moveit_scores.append(100.0 if planned_path_topics else 0.0)
+        execution_observable = bool(controller_action_topics or execute_action_topics)
+        if planned_path_topics:
+            moveit_scores.append(100.0 if execution_observable else 0.0)
+        if move_action_topics:
+            moveit_scores.append(100.0)
+        if controller_action_topics:
+            moveit_scores.append(100.0)
+        elif execute_action_topics:
+            moveit_scores.append(85.0)
+        scores.append(float(np.mean(moveit_scores)))
+
+    return max(scores) if scores else None
+
+
+def _rate_goal_score(rate_hz: float, target_hz: float) -> float:
+    """Normalize a topic rate against a practical target."""
+    if rate_hz <= 0 or target_hz <= 0:
+        return 0.0
+    return float(max(0.0, min(100.0, (rate_hz / target_hz) * 100.0)))
+
+
+def _select_topics(
+    topics: dict[str, dict],
+    *,
+    type_markers: tuple[str, ...] = (),
+    prefixes: tuple[str, ...] = (),
+    suffixes: tuple[str, ...] = (),
+    contains: tuple[str, ...] = (),
+) -> list[str]:
+    """Return topic names matching type/name heuristics, sorted by rate desc."""
+    matches = []
+    normalized_type_markers = tuple(marker.lower() for marker in type_markers)
+    normalized_prefixes = tuple(prefix.lower() for prefix in prefixes)
+    normalized_suffixes = tuple(suffix.lower() for suffix in suffixes)
+    normalized_contains = tuple(fragment.lower() for fragment in contains)
+
+    for name, info in topics.items():
+        if int(info.get("count", 0) or 0) <= 0:
+            continue
+        lower_name = name.lower()
+        lower_type = str(info.get("type", "")).lower()
+
+        if normalized_type_markers and not any(marker in lower_type for marker in normalized_type_markers):
+            continue
+
+        has_name_filters = bool(normalized_prefixes or normalized_suffixes or normalized_contains)
+        if has_name_filters:
+            name_match = (
+                any(lower_name.startswith(prefix) for prefix in normalized_prefixes)
+                or any(lower_name == suffix or lower_name.endswith(suffix) for suffix in normalized_suffixes)
+                or any(fragment in lower_name for fragment in normalized_contains)
+            )
+            if not name_match:
+                continue
+
+        matches.append(name)
+
+    return sorted(matches, key=lambda name: (-topics[name]["rate_hz"], name))
 
 
 def _add_pipeline_latency_recs(
     recs: list[str],
     topic_timestamps: dict[str, list[int]],
     pipeline: list[tuple[str, str, str]],
+    *,
+    min_output_samples: int = 5,
 ) -> None:
     """Measure and report pipeline latency between topic pairs.
 
@@ -913,7 +1523,7 @@ def _add_pipeline_latency_recs(
     for input_topic, output_topic, label in pipeline:
         ts_in = topic_timestamps.get(input_topic, [])
         ts_out = topic_timestamps.get(output_topic, [])
-        if len(ts_in) < 5 or len(ts_out) < 5:
+        if len(ts_in) < max(min_output_samples, 1) or len(ts_out) < min_output_samples:
             continue
 
         arr_in = np.array(sorted(ts_in), dtype=np.int64)
@@ -934,18 +1544,90 @@ def _add_pipeline_latency_recs(
         if not latencies_ms:
             continue
 
+        # If the stages run at a similar period, also evaluate index-aligned
+        # pairing. This avoids under-reporting when true latency exceeds one
+        # period and "latest input before output" starts matching the next frame.
+        if len(arr_in) >= 6 and len(arr_out) >= 6:
+            input_period_ms = float(np.median(np.diff(arr_in)) / 1e6)
+            output_period_ms = float(np.median(np.diff(arr_out)) / 1e6)
+            if input_period_ms > 0 and output_period_ms > 0:
+                period_ratio = max(input_period_ms, output_period_ms) / min(input_period_ms, output_period_ms)
+                if period_ratio <= 1.25:
+                    pair_count = min(len(arr_in), len(arr_out))
+                    aligned = ((arr_out[:pair_count] - arr_in[:pair_count]) / 1e6).astype(float)
+                    aligned = aligned[aligned >= 0]
+                    if len(aligned) >= 5:
+                        aligned_median = float(np.median(aligned))
+                        predecessor_median = float(np.median(latencies_ms))
+                        if aligned_median > predecessor_median + max(input_period_ms * 0.25, 1.0):
+                            latencies_ms = aligned.tolist()
+
         median_lat = float(np.median(latencies_ms))
         p95_lat = float(np.percentile(latencies_ms, 95))
+        sample_note = ""
+        if len(latencies_ms) < 5:
+            plural = "s" if len(latencies_ms) != 1 else ""
+            sample_note = f" ({len(latencies_ms)} sample{plural})"
 
         if median_lat < 50:
             recs.append(
-                f"  [green]:heavy_check_mark:[/green] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95"
+                f"  [green]:heavy_check_mark:[/green] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}"
             )
         elif median_lat < 200:
             recs.append(
-                f"  [yellow]:warning:[/yellow] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95 — may affect real-time performance"
+                f"  [yellow]:warning:[/yellow] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — may affect real-time performance"
             )
         else:
             recs.append(
-                f"  [red]:x:[/red] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95 — too slow for real-time"
+                f"  [red]:x:[/red] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — too slow for real-time"
+            )
+
+
+def _add_event_response_latency_recs(
+    recs: list[str],
+    topic_timestamps: dict[str, list[int]],
+    pairs: list[tuple[str, str, str]],
+    *,
+    min_input_samples: int = 1,
+    max_response_ms: float = 2000.0,
+) -> None:
+    """Measure sparse event-to-next-response latency."""
+    for input_topic, output_topic, label in pairs:
+        ts_in = topic_timestamps.get(input_topic, [])
+        ts_out = topic_timestamps.get(output_topic, [])
+        if len(ts_in) < min_input_samples or not ts_out:
+            continue
+
+        arr_in = np.array(sorted(ts_in), dtype=np.int64)
+        arr_out = np.array(sorted(ts_out), dtype=np.int64)
+        latencies_ms: list[float] = []
+        for t_in in arr_in:
+            idx = int(np.searchsorted(arr_out, t_in, side="right"))
+            if idx >= len(arr_out):
+                continue
+            latency_ms = float((arr_out[idx] - t_in) / 1e6)
+            if 0 <= latency_ms <= max_response_ms:
+                latencies_ms.append(latency_ms)
+
+        if len(latencies_ms) < min_input_samples:
+            continue
+
+        median_lat = float(np.median(latencies_ms))
+        p95_lat = float(np.percentile(latencies_ms, 95))
+        sample_note = ""
+        if len(latencies_ms) < 5:
+            plural = "s" if len(latencies_ms) != 1 else ""
+            sample_note = f" ({len(latencies_ms)} sample{plural})"
+
+        if median_lat < 50:
+            recs.append(
+                f"  [green]:heavy_check_mark:[/green] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}"
+            )
+        elif median_lat < 200:
+            recs.append(
+                f"  [yellow]:warning:[/yellow] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — may affect responsiveness"
+            )
+        else:
+            recs.append(
+                f"  [red]:x:[/red] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — too slow for interactive use"
             )

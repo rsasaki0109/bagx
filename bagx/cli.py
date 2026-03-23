@@ -41,12 +41,19 @@ def main_callback(
     import os
 
     level = logging.WARNING
+    ros_level = "WARN"
     if verbose:
         level = logging.DEBUG
+        ros_level = "INFO"
+        os.environ.pop("BAGX_SUPPRESS_NATIVE_STDERR", None)
     elif quiet:
         level = logging.ERROR
-        # Suppress ROS2 internal rcutils logging (not controlled by Python logging)
-        os.environ.setdefault("RCUTILS_LOGGING_MIN_SEVERITY", "ERROR")
+        ros_level = "ERROR"
+        os.environ["BAGX_SUPPRESS_NATIVE_STDERR"] = "1"
+    else:
+        os.environ["BAGX_SUPPRESS_NATIVE_STDERR"] = "1"
+    # Suppress ROS2 internal rcutils logging (not controlled by Python logging)
+    os.environ.setdefault("RCUTILS_LOGGING_MIN_SEVERITY", ros_level)
     logging.basicConfig(format="%(levelname)s: %(message)s", level=level)
 
 

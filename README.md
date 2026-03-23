@@ -83,22 +83,63 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 
 bagx recognizes topic patterns and gives framework-specific advice:
 
+Namespaced topics are supported too, so real bags like `/robot/odom`,
+`/sensing/lidar/top/pointcloud_raw_ex`, or `/move_group/display_planned_path`
+are detected without renaming topics first.
+
 ```
 $ bagx eval nav2_robot.db3
 Nav2 topics detected
-  ✔ Odometry (/odom) at 50Hz — good for Nav2
-  ⚠ LaserScan (/scan) at 5Hz — 10Hz+ recommended for costmap updates
-  ⚠ cmd_vel at 8Hz — control loop may be too slow
+  ✔ Odometry (/robot/odom) at 50Hz — good for Nav2
+  ✔ LaserScan (/robot/scan) at 12Hz — good for costmap
+  ✔ Global plan (/plan) recorded 3 times — planner output is visible
+  ✔ NavigateToPose status (/navigate_to_pose/_action/status) recorded
+  ✔ Pipeline scan → cmd_vel (full loop): 41ms median, 81ms P95
+  ✔ Pipeline plan → cmd_vel onset: 11ms median, 76ms P95 (3 samples)
 
 $ bagx eval autoware_vehicle.db3
 Autoware topics detected
-  ✔ LiDAR (/sensing/lidar/points) at 10Hz
-  ✔ Camera (/sensing/camera/image) at 30Hz
-  ✔ GNSS (/sensing/gnss/fix)
+  ✔ LiDAR (/sensing/lidar/top/pointcloud_raw_ex) at 10Hz
+  ✔ Camera (/sensing/camera/front/image_raw/compressed) at 30Hz
+  ✔ GNSS (/sensing/gnss/ublox/nav_sat_fix)
+  ℹ Sensing/localization-only Autoware bag — skipping planning/control checks
 
 $ bagx eval moveit_arm.db3
 MoveIt topics detected
-  ✔ JointState (/joint_states) at 500Hz — good for motion planning
+  ✔ JointState (/joint_states) at 115Hz — good for motion planning
+  ✔ MoveGroup action activity recorded on /move_action/_action/status
+  ✔ Joint trajectory controller activity recorded on /panda_arm_controller/follow_joint_trajectory/_action/status
+  ✔ Pipeline joint_states → planned_path: 6ms median, 6ms P95 (1 sample)
+  ✔ Pipeline planned_path → arm execution: 5ms median, 5ms P95 (1 sample)
+```
+
+## Dogfooding
+
+bagx is dogfooded against:
+
+- Autoware real bags, including the official `all-sensors-bag4` dataset from the Autoware documentation datasets page
+- Nav2 simulator bags captured with `scripts/run_ros_dogfood.py nav2-gazebo`
+- MoveIt simulator bags captured with `scripts/run_ros_dogfood.py moveit-demo`
+
+Recent dogfood runs:
+
+- `nav2-deep-final-20260324-185315`: `Overall 100.0/100`, `LaserScan 13Hz`, `plan → cmd_vel onset 11ms median`
+- `moveit-exec-final-20260324-185315`: `Overall 100.0/100`, `JointState 115Hz`, `planned_path → arm execution 5ms median`
+- `autoware_isuzu_all_sensors_bag4`: real bag, `Overall 72.2/100`, plus a sensing-only note when planning/control topics are absent
+
+Typical local workflow:
+
+```bash
+# Assumes the ROS overlay is already installed at .cache/ros_overlay_nav2_test
+python3 scripts/run_ros_dogfood.py nav2-gazebo \
+  --duration 40 \
+  --record-dir .cache/dogfood/nav2-deep-final
+bagx eval .cache/dogfood/nav2-deep-final
+
+python3 scripts/run_ros_dogfood.py moveit-demo \
+  --duration 40 \
+  --record-dir .cache/dogfood/moveit-exec-final
+bagx eval .cache/dogfood/moveit-exec-final
 ```
 
 ## Links
