@@ -31,6 +31,10 @@ bagx benchmark benchmark.json --rules examples/custom_rules/warehouse_bot.json
 
 Use `bagx rules list` to see built-in and installed plugins.
 
+Invalid rule files are validated before evaluation. bagx reports all common schema
+errors it can find, including unknown check kinds, missing selectors, missing
+thresholds, and non-numeric latency/rate values.
+
 ## Rule format
 
 ```json
@@ -85,20 +89,35 @@ That lets other users run:
 bagx eval my_bag.db3 --rules your_plugin_name
 ```
 
-## Supported selectors
+## Selector fields
 
-- `name`
-- `name_contains`
-- `prefix`
-- `suffix`
-- `type`
-- `type_contains`
+A selector picks which topics a rule applies to. All fields are strings and
+optional, but a selector with no fields matches nothing.
 
-## Supported checks
+| Field | Match against | Notes |
+| --- | --- | --- |
+| `name` | exact topic name | e.g. `"/cmd_vel"` |
+| `name_contains` | substring of topic name | most common form |
+| `prefix` | topic name prefix | |
+| `suffix` | topic name suffix | |
+| `type` | exact message type string | e.g. `"sensor_msgs/msg/Imu"` |
+| `type_contains` | substring of message type | |
 
-- `topic_exists`
-- `topic_rate`
-- `latency`
+Unknown fields raise a schema error at load time.
+
+## Check schema
+
+Every check requires `kind` and `label`. Additional fields depend on `kind`.
+
+| `kind` | Required | Optional | Purpose |
+| --- | --- | --- | --- |
+| `topic_exists` | `selector` | `min_samples` | Topic with at least one message must exist. |
+| `topic_rate` | `selector`, `min_rate_hz` | `min_samples` | Topic must publish above the rate. |
+| `latency` | `input`, `output`, `target_ms` | `max_response_ms`, `min_samples` | Median delay from input → output must be ≤ `target_ms`. |
+
+All numeric fields (`min_rate_hz`, `target_ms`, `max_response_ms`) must be
+numbers; `min_samples` must be an integer. Invalid documents fail loading
+with a list of all detected schema errors at once, not one at a time.
 
 ## Typical use cases
 

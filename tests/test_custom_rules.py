@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from bagx.custom_rules import discover_rule_plugins, load_custom_rule_set
 
 
@@ -36,3 +38,34 @@ class TestRuleDiscovery:
 
         assert any(plugin.name == "field_robot" for plugin in plugins)
         assert rule_set.domains[0].name == "FieldRobot"
+
+    def test_invalid_rule_document_reports_schema_errors(self, tmp_path: Path):
+        path = tmp_path / "bad_rules.json"
+        path.write_text(json.dumps({
+            "domains": [
+                {
+                    "name": "BadBot",
+                    "match_topics": [{"name_contains": 42, "unknown": "x"}],
+                    "checks": [
+                        {"kind": "min_hertz", "label": "Wheel odom", "selector": {}},
+                        {"kind": "topic_rate", "label": "Controller command", "selector": {}},
+                        {
+                            "kind": "latency",
+                            "label": "path to command",
+                            "input": {"name_contains": "path"},
+                            "target_ms": "fast",
+                        },
+                    ],
+                }
+            ]
+        }, indent=2))
+
+        with pytest.raises(ValueError) as exc_info:
+            load_custom_rule_set(str(path))
+
+        message = str(exc_info.value)
+        assert "Invalid custom rules" in message
+        assert 'domains[0].checks[0].kind: unknown check kind "min_hertz"' in message
+        assert "domains[0].checks[1].min_rate_hz: required for topic_rate" in message
+        assert "domains[0].checks[2].output: required for latency" in message
+        assert "domains[0].checks[2].target_ms: must be a number" in message

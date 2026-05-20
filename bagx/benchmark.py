@@ -34,6 +34,7 @@ class BenchmarkCaseResult:
     overall_score: float | None = None
     domain_score: float | None = None
     detected_domains: list[str] = field(default_factory=list)
+    finding_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -146,8 +147,10 @@ def _run_benchmark_case(
 
     report = evaluate_bag(str(resolved_path), custom_rules_path=resolved_rules_path)
     expectations = case.get("expect", {})
-    recommendations = report.to_dict()["recommendations"]
+    report_dict = report.to_dict()
+    recommendations = report_dict["recommendations"]
     recommendation_text = "\n".join(recommendations)
+    findings = report_dict.get("findings", [])
     detected_domains = sorted(detect_domain_names(report.topic_info, report.custom_domains))
     checks = _evaluate_expectations(
         expectations=expectations,
@@ -155,6 +158,7 @@ def _run_benchmark_case(
         domain_score=report.domain_score,
         detected_domains=detected_domains,
         recommendation_text=recommendation_text,
+        findings=findings,
         topic_info=report.topic_info,
     )
     passed = all(check.passed for check in checks)
@@ -171,6 +175,7 @@ def _run_benchmark_case(
         overall_score=report.overall_score,
         domain_score=report.domain_score,
         detected_domains=detected_domains,
+        finding_ids=sorted(str(finding.get("id", "")) for finding in findings if finding.get("id")),
     )
 
 
@@ -204,6 +209,7 @@ def _evaluate_expectations(
     domain_score: float | None,
     detected_domains: list[str],
     recommendation_text: str,
+    findings: list[dict[str, Any]],
     topic_info: dict[str, dict[str, Any]],
 ) -> list[BenchmarkCheck]:
     checks: list[BenchmarkCheck] = []
@@ -260,6 +266,9 @@ def _evaluate_expectations(
             detail="absent" if passed else "present",
         ))
 
+    for expected in expectations.get("expected_findings", []):
+        checks.extend(_evaluate_expected_finding(expected, findings))
+
     for topic_name, min_rate in expectations.get("min_topic_rates", {}).items():
         actual_rate = float(topic_info.get(topic_name, {}).get("rate_hz", 0.0) or 0.0)
         passed = actual_rate >= float(min_rate)
@@ -276,6 +285,68 @@ def _evaluate_expectations(
             name=f"required_topic:{topic_name}",
             passed=passed,
             detail=f"type={actual_type or 'missing'}",
+        ))
+
+    return checks
+
+
+def _evaluate_expected_finding(
+    expected: str | dict[str, Any],
+    findings: list[dict[str, Any]],
+) -> list[BenchmarkCheck]:
+    if isinstance(expected, str):
+        finding_id = expected
+        expected_severity = None
+        expected_topics: list[str] = []
+        expected_domain = None
+        expected_category = None
+    else:
+        finding_id = str(expected.get("id", ""))
+        expected_severity = expected.get("severity")
+        expected_topics = [str(topic) for topic in expected.get("affected_topics", [])]
+        expected_domain = expected.get("domain")
+        expected_category = expected.get("category")
+
+    matches = [finding for finding in findings if finding.get("id") == finding_id]
+    checks = [
+        BenchmarkCheck(
+            name=f"expected_finding:{finding_id}",
+            passed=bool(matches),
+            detail="present" if matches else "missing",
+        )
+    ]
+    if not matches:
+        return checks
+
+    finding = matches[0]
+    if expected_severity is not None:
+        actual = finding.get("severity")
+        checks.append(BenchmarkCheck(
+            name=f"expected_finding_severity:{finding_id}",
+            passed=actual == expected_severity,
+            detail=f"severity={actual}, expected={expected_severity}",
+        ))
+    if expected_domain is not None:
+        actual = finding.get("domain")
+        checks.append(BenchmarkCheck(
+            name=f"expected_finding_domain:{finding_id}",
+            passed=actual == expected_domain,
+            detail=f"domain={actual}, expected={expected_domain}",
+        ))
+    if expected_category is not None:
+        actual = finding.get("category")
+        checks.append(BenchmarkCheck(
+            name=f"expected_finding_category:{finding_id}",
+            passed=actual == expected_category,
+            detail=f"category={actual}, expected={expected_category}",
+        ))
+    if expected_topics:
+        actual_topics = set(str(topic) for topic in finding.get("affected_topics", []))
+        missing = [topic for topic in expected_topics if topic not in actual_topics]
+        checks.append(BenchmarkCheck(
+            name=f"expected_finding_topics:{finding_id}",
+            passed=not missing,
+            detail="present" if not missing else f"missing={missing}",
         ))
 
     return checks

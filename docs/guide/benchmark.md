@@ -65,8 +65,34 @@ For proprietary stacks, pair a benchmark manifest with a custom rules plugin or 
 - `required_domains`
 - `required_recommendations`
 - `forbidden_recommendations`
+- `expected_findings`
 - `min_topic_rates`
 - `required_topics`
+
+### expected_findings
+
+`expected_findings` checks structured readiness findings by stable id instead of matching
+human-facing recommendation text. See [eval — Structured findings](eval.md#structured-findings)
+for the available ids and severity policy.
+
+```json
+{
+  "expect": {
+    "expected_findings": [
+      {
+        "id": "nav2.detected",
+        "severity": "info",
+        "domain": "nav2",
+        "category": "domain_detection"
+      }
+    ]
+  }
+}
+```
+
+Each item can be either a bare string (id only) or an object. When an object is
+given, `severity`, `domain`, `category`, and `affected_topics` are checked
+individually and produce separate `expected_finding_*` sub-checks in the report.
 
 ## JSON contract
 
@@ -75,5 +101,6 @@ Benchmark JSON reports include:
 - `schema_version`
 - `report_type`
 - `bagx_version`
+- `finding_ids` for each evaluated case
 
 This makes it practical to gate regressions in CI or compare reports across releases.
