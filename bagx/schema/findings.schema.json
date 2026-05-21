@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://rsasaki0109.github.io/bagx/schema/findings.schema.json",
   "title": "bagx Finding",
-  "description": "Structured readiness finding emitted by bagx eval (schema_version 1.1.0+). One Finding is a stable, machine-readable readiness result for a recorded ROS2 bag.",
+  "description": "Structured readiness finding emitted by bagx eval. One Finding is a stable, machine-readable readiness result for a recorded ROS2 bag. Compatible with bagx report schema_version 1.1.0 and later.",
   "type": "object",
   "required": ["id", "title", "severity", "category"],
   "additionalProperties": false,

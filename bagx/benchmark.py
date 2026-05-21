@@ -13,6 +13,7 @@ from rich.table import Table
 
 from bagx.contracts import report_metadata
 from bagx.eval import detect_domain_names, evaluate_bag
+from bagx.findings import SEVERITY_ORDER, severity_at_least
 
 
 @dataclass
@@ -35,6 +36,7 @@ class BenchmarkCaseResult:
     domain_score: float | None = None
     detected_domains: list[str] = field(default_factory=list)
     finding_ids: list[str] = field(default_factory=list)
+    worst_severity: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -51,6 +53,7 @@ class BenchmarkSuiteReport:
     failed_cases: int
     skipped_cases: int
     cases: list[BenchmarkCaseResult] = field(default_factory=list)
+    worst_severity: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -60,10 +63,24 @@ class BenchmarkSuiteReport:
             "passed_cases": self.passed_cases,
             "failed_cases": self.failed_cases,
             "skipped_cases": self.skipped_cases,
+            "worst_severity": self.worst_severity,
             "cases": [case.to_dict() for case in self.cases],
         }
         data.update(report_metadata("benchmark_suite"))
         return data
+
+
+def _worst_severity(findings: list[dict[str, Any]]) -> str | None:
+    """Return the worst severity in a finding list, or None if empty."""
+    worst: str | None = None
+    worst_rank = -1
+    for finding in findings:
+        sev = str(finding.get("severity", ""))
+        rank = SEVERITY_ORDER.get(sev, -1)
+        if rank > worst_rank:
+            worst_rank = rank
+            worst = sev
+    return worst
 
 
 def run_benchmark_suite(
@@ -98,6 +115,16 @@ def run_benchmark_suite(
         for case in raw_cases
     ]
 
+    case_worst_severities = [
+        case.worst_severity for case in case_results if case.worst_severity
+    ]
+    suite_worst = None
+    if case_worst_severities:
+        suite_worst = max(
+            case_worst_severities,
+            key=lambda sev: SEVERITY_ORDER.get(sev, -1),
+        )
+
     return BenchmarkSuiteReport(
         manifest_path=str(manifest_file),
         suite_name=suite_name,
@@ -106,6 +133,7 @@ def run_benchmark_suite(
         failed_cases=sum(case.status == "failed" for case in case_results),
         skipped_cases=sum(case.status == "skipped" for case in case_results),
         cases=case_results,
+        worst_severity=suite_worst,
     )
 
 
@@ -176,6 +204,7 @@ def _run_benchmark_case(
         domain_score=report.domain_score,
         detected_domains=detected_domains,
         finding_ids=sorted(str(finding.get("id", "")) for finding in findings if finding.get("id")),
+        worst_severity=_worst_severity(findings),
     )
 
 
@@ -269,6 +298,13 @@ def _evaluate_expectations(
     for expected in expectations.get("expected_findings", []):
         checks.extend(_evaluate_expected_finding(expected, findings))
 
+    for forbidden in expectations.get("forbidden_findings", []):
+        checks.extend(_evaluate_forbidden_finding(forbidden, findings))
+
+    max_severity_map = expectations.get("max_severity") or {}
+    if isinstance(max_severity_map, dict) and max_severity_map:
+        checks.extend(_evaluate_max_severity(max_severity_map, findings))
+
     for topic_name, min_rate in expectations.get("min_topic_rates", {}).items():
         actual_rate = float(topic_info.get(topic_name, {}).get("rate_hz", 0.0) or 0.0)
         passed = actual_rate >= float(min_rate)
@@ -349,6 +385,81 @@ def _evaluate_expected_finding(
             detail="present" if not missing else f"missing={missing}",
         ))
 
+    return checks
+
+
+def _evaluate_forbidden_finding(
+    forbidden: str | dict[str, Any],
+    findings: list[dict[str, Any]],
+) -> list[BenchmarkCheck]:
+    """Fail if a forbidden finding id appears.
+
+    A dict form like {"id": "x", "severity_min": "warning"} only forbids the
+    finding when its severity is at or above severity_min — useful when an info
+    finding is acceptable but warning+ is not.
+    """
+    if isinstance(forbidden, str):
+        finding_id = forbidden
+        severity_min = None
+    else:
+        finding_id = str(forbidden.get("id", ""))
+        severity_min = forbidden.get("severity_min")
+
+    matches = [f for f in findings if f.get("id") == finding_id]
+    if severity_min:
+        matches = [
+            f for f in matches if severity_at_least(str(f.get("severity", "")), severity_min)
+        ]
+
+    suffix = f" (severity>={severity_min})" if severity_min else ""
+    return [
+        BenchmarkCheck(
+            name=f"forbidden_finding:{finding_id}{suffix}",
+            passed=not matches,
+            detail="absent" if not matches else f"present (severity={matches[0].get('severity')})",
+        )
+    ]
+
+
+def _evaluate_max_severity(
+    max_severity_map: dict[str, str],
+    findings: list[dict[str, Any]],
+) -> list[BenchmarkCheck]:
+    """For each category, fail if any finding exceeds the allowed severity."""
+    checks: list[BenchmarkCheck] = []
+    for category, ceiling in sorted(max_severity_map.items()):
+        ceiling = str(ceiling)
+        if ceiling not in SEVERITY_ORDER:
+            checks.append(BenchmarkCheck(
+                name=f"max_severity:{category}",
+                passed=False,
+                detail=f"unknown severity {ceiling!r}",
+            ))
+            continue
+        ceiling_rank = SEVERITY_ORDER[ceiling]
+        offenders = [
+            f for f in findings
+            if str(f.get("category")) == category
+            and SEVERITY_ORDER.get(str(f.get("severity", "")), -1) > ceiling_rank
+        ]
+        if offenders:
+            worst = max(
+                offenders,
+                key=lambda f: SEVERITY_ORDER.get(str(f.get("severity", "")), -1),
+            )
+            detail = (
+                f"{worst.get('id')} has severity {worst.get('severity')}, "
+                f"max={ceiling}"
+            )
+            passed = False
+        else:
+            detail = f"all {category} findings <= {ceiling}"
+            passed = True
+        checks.append(BenchmarkCheck(
+            name=f"max_severity:{category}",
+            passed=passed,
+            detail=detail,
+        ))
     return checks
 
 

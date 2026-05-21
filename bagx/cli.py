@@ -122,9 +122,19 @@ def benchmark(
     fail_on_missing: bool = typer.Option(
         False, "--fail-on-missing", help="Treat missing bag paths as failures"
     ),
+    exit_on: Optional[str] = typer.Option(
+        None, "--exit-on", help="Exit non-zero when any case has a finding with this severity or higher: info, warning, error, critical"
+    ),
 ) -> None:
     """Run a manifest-driven benchmark suite for curated rosbag checks."""
     from bagx.benchmark import print_benchmark_report, run_benchmark_suite
+    from bagx.findings import SEVERITY_ORDER, severity_at_least
+
+    if exit_on is not None and exit_on not in SEVERITY_ORDER:
+        console.print(
+            f"[red]Error: --exit-on must be one of {list(SEVERITY_ORDER)}, got {exit_on!r}[/red]"
+        )
+        raise typer.Exit(2)
 
     try:
         report = run_benchmark_suite(
@@ -139,6 +149,11 @@ def benchmark(
                 json.dump(report.to_dict(), f, indent=2)
             console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
         if report.failed_cases > 0:
+            raise typer.Exit(1)
+        if exit_on and report.worst_severity and severity_at_least(report.worst_severity, exit_on):
+            console.print(
+                f"[red]Exiting non-zero: worst finding severity {report.worst_severity!r} >= --exit-on {exit_on!r}[/red]"
+            )
             raise typer.Exit(1)
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")

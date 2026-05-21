@@ -9,7 +9,7 @@ from typing import Any
 
 from bagx import __version__
 
-REPORT_SCHEMA_VERSION = "1.1.0"
+REPORT_SCHEMA_VERSION = "1.2.0"
 
 _SCHEMA_DIR = Path(__file__).resolve().parent / "schema"
 

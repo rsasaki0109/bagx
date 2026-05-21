@@ -94,13 +94,57 @@ Each item can be either a bare string (id only) or an object. When an object is
 given, `severity`, `domain`, `category`, and `affected_topics` are checked
 individually and produce separate `expected_finding_*` sub-checks in the report.
 
+### forbidden_findings
+
+The inverse of `expected_findings` — fail when listed ids appear. Each item can
+be either a bare string (id only) or an object with a `severity_min` scope:
+
+```json
+{
+  "expect": {
+    "forbidden_findings": [
+      "nav2.missing_global_plan",
+      {"id": "sync.delay.high", "severity_min": "error"}
+    ]
+  }
+}
+```
+
+With `severity_min`, the finding is only forbidden when its severity is at or
+above the threshold — letting an info-level appearance through while gating on
+the worse cases.
+
+### max_severity
+
+A per-category ceiling. Any finding whose severity exceeds the ceiling fails
+its case:
+
+```json
+{
+  "expect": {
+    "max_severity": {
+      "sensor_quality": "warning",
+      "topic_presence": "info"
+    }
+  }
+}
+```
+
+### --exit-on
+
+`bagx benchmark suite.json --exit-on warning` returns a non-zero exit code when
+any case's worst finding severity reaches the threshold. Use this together with
+the case-level `passed`/`failed` status to gate CI on both manifest expectations
+and structural severity.
+
 ## JSON contract
 
-Benchmark JSON reports include:
+Benchmark JSON reports (schema_version 1.2.0+) include:
 
 - `schema_version`
 - `report_type`
 - `bagx_version`
+- `worst_severity` at suite level and on each case
 - `finding_ids` for each evaluated case
 
 This makes it practical to gate regressions in CI or compare reports across releases.
