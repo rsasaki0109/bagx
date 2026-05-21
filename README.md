@@ -5,7 +5,10 @@
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rsasaki0109.github.io/bagx/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**One command to tell whether your rosbag is usable — for SLAM, perception, planning, and control.**
+**A readiness checker for recorded ROS2 bags.**
+
+bagx answers a practical question: can this bag be used for SLAM, navigation,
+perception, manipulation, Autoware validation, or your custom robot stack?
 
 ```bash
 pip install bagx
@@ -16,7 +19,9 @@ bagx eval your_bag.db3
   <img src="docs/eval_demo.svg" alt="bagx eval output" width="700">
 </p>
 
-bagx analyzes your rosbag and tells you:
+bagx checks topic presence, rates, gaps, sensor sync, approximate pipeline
+latency, workflow outcomes, and domain-specific readiness signals:
+
 - **SLAM readiness**: IMU noise, GNSS quality, LiDAR↔IMU sync, and whether LIO is a bad idea
 - **Navigation/control readiness**: odom / scan / costmap rates, goal observability, and `plan → cmd_vel` latency
 - **Workflow outcome visibility**: action/service success rate, terminal failures, and top failure reasons when those topics are recorded
@@ -221,7 +226,9 @@ bagx rules list
 bagx eval my_custom_stack.db3 --rules warehouse_bot
 ```
 
-JSON outputs now include `schema_version`, `report_type`, and `bagx_version`, so they are easier to gate in CI and compare across releases.
+JSON outputs now include `schema_version`, `report_type`, `bagx_version`, and structured
+`findings`, so they are easier to gate in CI and compare across releases without depending
+on human-facing recommendation text.
 
 Typical local workflow:
 

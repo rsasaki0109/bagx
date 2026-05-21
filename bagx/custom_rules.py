@@ -189,6 +189,7 @@ def _resolve_rule_payload(spec: str) -> tuple[str, dict[str, Any] | CustomRuleSe
 
 
 def _parse_rule_document(raw: dict[str, Any], source_label: str) -> CustomRuleSet:
+    _validate_rule_document(raw, source_label)
     domains: list[CustomDomainRule] = []
     for domain in raw.get("domains", []):
         name = str(domain.get("name", "")).strip()
@@ -211,6 +212,122 @@ def _parse_rule_document(raw: dict[str, Any], source_label: str) -> CustomRuleSe
         )
 
     return CustomRuleSet(source_path=source_label, domains=domains)
+
+
+def _validate_rule_document(raw: dict[str, Any], source_label: str) -> None:
+    errors: list[str] = []
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid custom rules in {source_label}:\n- document must be an object")
+
+    domains = raw.get("domains", [])
+    if not isinstance(domains, list):
+        errors.append("domains: must be a list")
+    else:
+        for domain_idx, domain in enumerate(domains):
+            domain_path = f"domains[{domain_idx}]"
+            if not isinstance(domain, dict):
+                errors.append(f"{domain_path}: must be an object")
+                continue
+            if not str(domain.get("name", "")).strip():
+                errors.append(f"{domain_path}.name: required")
+            if "min_matches" in domain:
+                try:
+                    int(domain["min_matches"])
+                except (TypeError, ValueError):
+                    errors.append(f"{domain_path}.min_matches: must be an integer")
+
+            match_topics = domain.get("match_topics", domain.get("topics", []))
+            if not isinstance(match_topics, list):
+                errors.append(f"{domain_path}.match_topics: must be a list")
+            else:
+                for selector_idx, selector in enumerate(match_topics):
+                    _validate_selector(
+                        selector,
+                        f"{domain_path}.match_topics[{selector_idx}]",
+                        errors,
+                    )
+
+            checks = domain.get("checks", [])
+            if not isinstance(checks, list):
+                errors.append(f"{domain_path}.checks: must be a list")
+            else:
+                for check_idx, check in enumerate(checks):
+                    _validate_check_document(check, f"{domain_path}.checks[{check_idx}]", errors)
+
+    if errors:
+        formatted = "\n".join(f"- {error}" for error in errors)
+        raise ValueError(f"Invalid custom rules in {source_label}:\n{formatted}")
+
+
+def _validate_check_document(data: Any, path: str, errors: list[str]) -> None:
+    if not isinstance(data, dict):
+        errors.append(f"{path}: must be an object")
+        return
+
+    kind = str(data.get("kind", "")).strip()
+    if not kind:
+        errors.append(f"{path}.kind: required")
+    elif kind not in {"topic_exists", "topic_rate", "latency"}:
+        errors.append(f'{path}.kind: unknown check kind "{kind}"')
+
+    if not str(data.get("label", "")).strip():
+        errors.append(f"{path}.label: required")
+
+    if kind in {"topic_exists", "topic_rate"}:
+        if "selector" not in data:
+            errors.append(f"{path}.selector: required for {kind}")
+        else:
+            _validate_selector(data["selector"], f"{path}.selector", errors)
+    elif "selector" in data:
+        _validate_selector(data["selector"], f"{path}.selector", errors)
+
+    if kind == "topic_rate":
+        if "min_rate_hz" not in data:
+            errors.append(f"{path}.min_rate_hz: required for topic_rate")
+        else:
+            _validate_float(data["min_rate_hz"], f"{path}.min_rate_hz", errors)
+
+    if kind == "latency":
+        if "input" not in data:
+            errors.append(f"{path}.input: required for latency")
+        else:
+            _validate_selector(data["input"], f"{path}.input", errors)
+        if "output" not in data:
+            errors.append(f"{path}.output: required for latency")
+        else:
+            _validate_selector(data["output"], f"{path}.output", errors)
+        if "target_ms" not in data:
+            errors.append(f"{path}.target_ms: required for latency")
+        else:
+            _validate_float(data["target_ms"], f"{path}.target_ms", errors)
+
+    if "max_response_ms" in data:
+        _validate_float(data["max_response_ms"], f"{path}.max_response_ms", errors)
+    if "min_samples" in data:
+        try:
+            int(data["min_samples"])
+        except (TypeError, ValueError):
+            errors.append(f"{path}.min_samples: must be an integer")
+
+
+def _validate_selector(data: Any, path: str, errors: list[str]) -> None:
+    if not isinstance(data, dict):
+        errors.append(f"{path}: must be an object")
+        return
+    allowed_keys = {"name", "name_contains", "prefix", "suffix", "type", "type_contains"}
+    for key, value in data.items():
+        if key not in allowed_keys:
+            errors.append(f'{path}.{key}: unknown selector field')
+            continue
+        if value is not None and not isinstance(value, str):
+            errors.append(f"{path}.{key}: must be a string")
+
+
+def _validate_float(value: Any, path: str, errors: list[str]) -> None:
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        errors.append(f"{path}: must be a number")
 
 
 def _coerce_rule_document(payload: Any, source_label: str) -> dict[str, Any]:

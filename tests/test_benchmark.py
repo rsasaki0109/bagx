@@ -31,6 +31,14 @@ class TestBenchmarkSuite:
                     "expect": {
                         "required_domains": ["Nav2"],
                         "required_recommendations": ["Nav2 topics detected"],
+                        "expected_findings": [
+                            {
+                                "id": "nav2.detected",
+                                "severity": "info",
+                                "domain": "nav2",
+                                "category": "domain_detection",
+                            }
+                        ],
                         "min_topic_rates": {"/robot/scan": 10},
                     },
                 },
@@ -48,6 +56,7 @@ class TestBenchmarkSuite:
         assert report.failed_cases == 0
         assert report.skipped_cases == 1
         assert report.cases[0].status == "passed"
+        assert "nav2.detected" in report.cases[0].finding_ids
         assert report.cases[1].status == "skipped"
 
     def test_run_benchmark_suite_detects_failed_expectation(self, tmp_path: Path, gnss_bag: Path):
@@ -70,6 +79,37 @@ class TestBenchmarkSuite:
         assert report.failed_cases == 1
         assert report.cases[0].status == "failed"
         assert any(not check.passed for check in report.cases[0].checks)
+
+    def test_run_benchmark_suite_detects_missing_expected_finding(
+        self, tmp_path: Path, nav2_bag: Path
+    ):
+        manifest_path = _write_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "bad-finding-expectation",
+                    "bag_path": str(nav2_bag),
+                    "expect": {
+                        "expected_findings": [
+                            {
+                                "id": "nav2.missing_cmd_vel",
+                                "severity": "warning",
+                                "affected_topics": ["/cmd_vel"],
+                            }
+                        ]
+                    },
+                }
+            ],
+        )
+
+        report = run_benchmark_suite(str(manifest_path))
+
+        assert report.failed_cases == 1
+        assert report.cases[0].status == "failed"
+        assert any(
+            check.name == "expected_finding:nav2.missing_cmd_vel" and not check.passed
+            for check in report.cases[0].checks
+        )
 
     def test_run_benchmark_suite_case_filter(self, tmp_path: Path, nav2_bag: Path, gnss_bag: Path):
         manifest_path = _write_manifest(

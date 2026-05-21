@@ -19,6 +19,8 @@ from rich.table import Table
 
 from bagx.custom_rules import CustomDomainResult, evaluate_custom_rule_set, load_custom_rule_set
 from bagx.contracts import report_metadata
+from bagx.eval_findings import generate_findings
+from bagx.findings import Finding
 from bagx.reader import BagReader, Message
 from bagx.topic_filters import is_sync_candidate
 
@@ -121,9 +123,15 @@ class EvalReport:
     topic_info: dict = field(default_factory=dict)  # {name: {"type": str, "count": int, "rate_hz": float}}
     custom_domains: list[CustomDomainResult] = field(default_factory=list)
     workflow_metrics: list[WorkflowMetrics] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
     _topic_timestamps: dict = field(default_factory=dict, repr=False)  # internal, not serialized
 
     def to_dict(self) -> dict:
+        if not self.findings:
+            self.findings = generate_findings(
+                self,
+                detect_domain_names(self.topic_info, self.custom_domains),
+            )
         d = asdict(self)
         # Remove internal fields
         d.pop("_topic_timestamps", None)
@@ -137,6 +145,7 @@ class EvalReport:
         d["recommendations"] = [
             _strip_rich_markup(r) for r in generate_recommendations(self)
         ]
+        d["findings"] = [finding.to_dict() for finding in self.findings]
         d.update(report_metadata("eval"))
         return d
 
@@ -287,6 +296,7 @@ def evaluate_bag(
         scores.append(report.domain_score)
 
     report.overall_score = float(np.mean(scores)) if scores else 0.0
+    report.findings = generate_findings(report, domains)
 
     if output_json:
         json.dump(report.to_dict(), output_json, indent=2)

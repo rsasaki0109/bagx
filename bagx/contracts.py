@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from bagx import __version__
 
-REPORT_SCHEMA_VERSION = "1.0.0"
+REPORT_SCHEMA_VERSION = "1.1.0"
 
 
 def report_metadata(report_type: str) -> dict[str, str]:

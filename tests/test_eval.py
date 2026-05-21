@@ -107,6 +107,18 @@ class TestEvalReport:
         assert "gnss" in data
         assert data["gnss"]["fix_rate"] == pytest.approx(0.9, abs=0.01)
 
+    def test_to_dict_includes_structured_findings(self, nav2_bag: Path):
+        report = evaluate_bag(str(nav2_bag))
+        findings = report.to_dict()["findings"]
+
+        assert findings
+        by_id = {finding["id"]: finding for finding in findings}
+        assert "nav2.detected" in by_id
+        assert by_id["nav2.detected"]["severity"] == "info"
+        assert by_id["nav2.detected"]["category"] == "domain_detection"
+        assert by_id["nav2.detected"]["domain"] == "nav2"
+        assert by_id["nav2.detected"]["evidence"][0]["metric"] == "domain_detected"
+
 
 class TestFrameworkDetection:
     """Test domain-specific recommendations for supported frameworks."""
