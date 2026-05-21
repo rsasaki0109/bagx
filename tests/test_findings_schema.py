@@ -8,6 +8,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from bagx.anomaly import detect_anomalies
 from bagx.contracts import findings_schema, findings_schema_path
 from bagx.eval import evaluate_bag
 
@@ -140,6 +141,19 @@ def test_schema_rejects_time_range_with_negative_ns():
     validator = jsonschema.Draft202012Validator(schema)
     errors = list(validator.iter_errors(finding))
     assert errors, "schema should reject negative time_range endpoints"
+
+
+def test_anomaly_findings_validate_against_schema(gnss_bag):
+    """Temporal findings emitted by bagx.anomaly must validate."""
+    report = detect_anomalies(str(gnss_bag))
+    schema = findings_schema()
+    validator = jsonschema.Draft202012Validator(schema)
+    for finding in report.to_dict()["findings"]:
+        errors = list(validator.iter_errors(finding))
+        assert not errors, (
+            f"anomaly finding {finding.get('id')!r} failed schema: "
+            f"{[e.message for e in errors]}"
+        )
 
 
 def test_schema_rejects_time_range_with_extra_fields():

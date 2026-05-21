@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 
 
-from bagx.anomaly import detect_anomalies, AnomalyReport
+from bagx.anomaly import (
+    AnomalyEvent,
+    AnomalyReport,
+    _anomaly_events_to_findings,
+    detect_anomalies,
+)
+from bagx.findings import TimeRange
 
 
 class TestGnssAnomalies:
@@ -284,3 +290,130 @@ class TestAnomalyReport:
         report = detect_anomalies(str(multi_bag))
         assert isinstance(report, AnomalyReport)
         assert report.total_anomalies >= 0
+
+
+class TestTemporalFindings:
+    """Phase B: anomaly events should aggregate into temporal Findings."""
+
+    def test_report_has_findings_field(self, gnss_bag: Path):
+        report = detect_anomalies(str(gnss_bag))
+        assert isinstance(report.findings, list)
+        # gnss_bag has a fix-drop, so we expect at least one fix_lost finding
+        fix_lost = [f for f in report.findings if "fix_lost" in f.id]
+        assert fix_lost, "expected an anomaly.gnss.fix_lost finding from gnss_bag"
+
+    def test_fix_lost_finding_has_time_range(self, gnss_bag: Path):
+        report = detect_anomalies(str(gnss_bag))
+        fix_lost = next(f for f in report.findings if "fix_lost" in f.id)
+        assert fix_lost.time_range is not None
+        assert fix_lost.time_range.start_ns > 0
+        assert fix_lost.time_range.end_ns >= fix_lost.time_range.start_ns
+
+    def test_fix_lost_finding_spans_to_bag_end_when_no_recovery(self, gnss_bag: Path):
+        """When fix never recovers, the segment runs from drop to bag end."""
+        report = detect_anomalies(str(gnss_bag))
+        fix_lost = next(f for f in report.findings if "fix_lost" in f.id)
+        # Segment should be at least 1 second (gnss_bag has 10 messages @ 10Hz of no-fix)
+        assert fix_lost.time_range is not None
+        assert fix_lost.time_range.duration_sec > 0.5
+        # Recovery evidence should mark recovered=False
+        recovered_ev = next(e for e in fix_lost.evidence if e.metric == "recovered")
+        assert recovered_ev.observed is False
+
+    def test_findings_serialize_with_time_range(self, gnss_bag: Path, tmp_path: Path):
+        """JSON output must include findings with time_range field."""
+        json_path = tmp_path / "anomalies.json"
+        with open(json_path, "w") as f:
+            detect_anomalies(str(gnss_bag), output_json=f)
+
+        with open(json_path) as f:
+            data = json.load(f)
+
+        assert "findings" in data
+        assert isinstance(data["findings"], list)
+        if data["findings"]:
+            f0 = data["findings"][0]
+            assert "id" in f0
+            assert "time_range" in f0
+            if f0["time_range"] is not None:
+                assert "start_ns" in f0["time_range"]
+                assert "end_ns" in f0["time_range"]
+
+
+class TestAnomalyEventsToFindings:
+    """Direct tests for the aggregation helper."""
+
+    def _ev(self, ts: int, topic: str, type_: str, severity: str = "medium") -> AnomalyEvent:
+        return AnomalyEvent(
+            timestamp_ns=ts,
+            topic=topic,
+            type=type_,
+            severity=severity,
+            description=f"{type_} at {ts}",
+        )
+
+    def test_empty_events_yield_empty_findings(self):
+        out = _anomaly_events_to_findings(
+            [], gnss_recoveries={}, interval_by_topic={}, bag_end_ns=0
+        )
+        assert out == []
+
+    def test_single_spike_becomes_point_finding(self):
+        events = [self._ev(1_000_000_000, "/imu", "imu_accel_spike", "high")]
+        out = _anomaly_events_to_findings(
+            events, gnss_recoveries={}, interval_by_topic={}, bag_end_ns=10_000_000_000
+        )
+        assert len(out) == 1
+        f = out[0]
+        assert f.severity == "error"  # high -> error
+        assert f.time_range == TimeRange(start_ns=1_000_000_000, end_ns=1_000_000_000)
+        assert f.affected_topics == ["/imu"]
+        assert "imu.accel_spike" in f.id
+
+    def test_close_spikes_cluster_into_one_finding(self):
+        events = [
+            self._ev(1_000_000_000, "/imu", "imu_accel_spike", "medium"),
+            self._ev(2_000_000_000, "/imu", "imu_accel_spike", "high"),
+            self._ev(3_000_000_000, "/imu", "imu_accel_spike", "medium"),
+        ]
+        out = _anomaly_events_to_findings(
+            events, gnss_recoveries={}, interval_by_topic={}, bag_end_ns=10_000_000_000
+        )
+        assert len(out) == 1
+        f = out[0]
+        assert f.severity == "error"  # max severity in cluster
+        assert f.time_range == TimeRange(start_ns=1_000_000_000, end_ns=3_000_000_000)
+        assert "(3 events)" in f.title
+
+    def test_distant_events_split_into_separate_findings(self):
+        # Events 60 seconds apart should not cluster (gap threshold = 30s)
+        events = [
+            self._ev(1_000_000_000, "/imu", "imu_accel_spike", "medium"),
+            self._ev(61_000_000_000, "/imu", "imu_accel_spike", "medium"),
+        ]
+        out = _anomaly_events_to_findings(
+            events, gnss_recoveries={}, interval_by_topic={}, bag_end_ns=120_000_000_000
+        )
+        assert len(out) == 2
+        # Disambiguated ids by cluster index
+        assert {f.id.split(".")[-1] for f in out} == {"0", "1"}
+
+    def test_gnss_fix_drop_with_recovery_forms_segment(self):
+        events = [self._ev(5_000_000_000, "/gnss", "gnss_fix_drop", "medium")]
+        out = _anomaly_events_to_findings(
+            events,
+            gnss_recoveries={"/gnss": [8_000_000_000]},
+            interval_by_topic={},
+            bag_end_ns=10_000_000_000,
+        )
+        fix_lost = next(f for f in out if "fix_lost" in f.id)
+        assert fix_lost.time_range == TimeRange(start_ns=5_000_000_000, end_ns=8_000_000_000)
+        recovered = next(e for e in fix_lost.evidence if e.metric == "recovered")
+        assert recovered.observed is True
+
+    def test_severity_mapping(self):
+        events = [self._ev(0, "/imu", "imu_gyro_spike", "low")]
+        out = _anomaly_events_to_findings(
+            events, gnss_recoveries={}, interval_by_topic={}, bag_end_ns=1
+        )
+        assert out[0].severity == "info"

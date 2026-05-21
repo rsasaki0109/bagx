@@ -1,6 +1,9 @@
 """Anomaly detection for sensor data in rosbag files.
 
 Detects outliers and anomalies in GNSS, IMU, and general message rate data.
+Also aggregates raw anomaly events into temporal :class:`bagx.findings.Finding`
+objects so downstream tooling (bagx diff, benchmark) can reason about
+segment-level readiness rather than individual events.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bagx.contracts import report_metadata
+from bagx.findings import Evidence, Finding, TimeRange, clean_topic_token, finding_id
 from bagx.reader import BagReader, Message
 from bagx.topic_filters import is_rate_anomaly_candidate
 
@@ -24,6 +28,23 @@ logger = logging.getLogger(__name__)
 
 RATE_ANOMALY_WARMUP_MIN_DURATION_SEC = 15.0
 RATE_ANOMALY_WARMUP_SEC = 5.0
+
+# Events of the same (topic, type) that fall within this gap collapse into a
+# single temporal Finding. 30s is wide enough that intermittent spikes feel
+# like one segment, narrow enough that distinct fault windows stay separate.
+FINDING_CLUSTER_GAP_NS = 30 * 1_000_000_000
+
+_ANOMALY_TO_FINDING_SEVERITY = {"low": "info", "medium": "warning", "high": "error"}
+
+# Anomaly type → (id token, human-readable label) for Finding emission.
+_ANOMALY_TYPE_META: dict[str, tuple[str, str]] = {
+    "gnss_jump": ("gnss.jump", "GNSS position jump"),
+    "gnss_hdop_spike": ("gnss.hdop_spike", "GNSS HDOP spike"),
+    "imu_accel_spike": ("imu.accel_spike", "IMU acceleration spike"),
+    "imu_gyro_spike": ("imu.gyro_spike", "IMU gyro spike"),
+    "imu_frequency_drop": ("imu.frequency_drop", "IMU message gap"),
+    "rate_gap": ("rate.gap", "Message rate gap"),
+}
 
 
 @dataclass
@@ -44,12 +65,14 @@ class AnomalyReport:
     bag_path: str
     total_anomalies: int
     anomalies: list[AnomalyEvent] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         data = {
             "bag_path": self.bag_path,
             "total_anomalies": self.total_anomalies,
             "anomalies": [asdict(a) for a in self.anomalies],
+            "findings": [f.to_dict() for f in self.findings],
         }
         data.update(report_metadata("anomaly"))
         return data
@@ -102,14 +125,18 @@ def detect_anomalies(
             imu_messages[msg.topic].append(msg)
 
     anomalies: list[AnomalyEvent] = []
+    gnss_recoveries: dict[str, list[int]] = {}
+    interval_by_topic: dict[str, int] = {}
 
     # GNSS anomalies
     for topic, messages in gnss_messages.items():
         anomalies.extend(_detect_gnss_anomalies(topic, messages))
+        gnss_recoveries[topic] = _detect_gnss_recoveries(messages)
 
     # IMU anomalies
     for topic, messages in imu_messages.items():
         anomalies.extend(_detect_imu_anomalies(topic, messages, warmup_cutoff_ns=warmup_cutoff_ns))
+        interval_by_topic[topic] = _median_interval_ns([m.timestamp_ns for m in messages])
 
     # General rate anomalies (skip GNSS/IMU topics — already covered above)
     specialized_topics = set(gnss_topics) | set(imu_topics)
@@ -122,6 +149,7 @@ def detect_anomalies(
                     warmup_cutoff_ns=warmup_cutoff_ns,
                 )
             )
+            interval_by_topic[topic] = _median_interval_ns(timestamps)
 
     # Sort by timestamp
     anomalies.sort(key=lambda a: a.timestamp_ns)
@@ -129,10 +157,19 @@ def detect_anomalies(
     if not anomalies:
         logger.info("No anomalies detected in %s", bag_path)
 
+    bag_end_ns = summary.start_time_ns + int(summary.duration_sec * 1e9)
+    findings = _anomaly_events_to_findings(
+        anomalies,
+        gnss_recoveries=gnss_recoveries,
+        interval_by_topic=interval_by_topic,
+        bag_end_ns=bag_end_ns,
+    )
+
     report = AnomalyReport(
         bag_path=str(bag_path),
         total_anomalies=len(anomalies),
         anomalies=anomalies,
+        findings=findings,
     )
 
     if output_json:
@@ -355,6 +392,205 @@ def _rate_anomaly_warmup_cutoff_ns(start_time_ns: int, duration_sec: float) -> i
     return start_time_ns + int(RATE_ANOMALY_WARMUP_SEC * 1e9)
 
 
+def _detect_gnss_recoveries(messages: list[Message]) -> list[int]:
+    """Return timestamps where GNSS status recovers (status < 0 -> >= 0)."""
+    recoveries: list[int] = []
+    prev_status: int | None = None
+    for msg in messages:
+        status = msg.data.get("status", -1)
+        if prev_status is not None and prev_status < 0 and status >= 0:
+            recoveries.append(msg.timestamp_ns)
+        prev_status = status
+    return recoveries
+
+
+def _median_interval_ns(timestamps: list[int]) -> int:
+    if len(timestamps) < 2:
+        return 0
+    diffs = np.diff(np.sort(np.array(timestamps, dtype=np.int64)))
+    if diffs.size == 0:
+        return 0
+    return int(np.median(diffs))
+
+
+def _max_anomaly_severity(events: list[AnomalyEvent]) -> str:
+    rank = {"low": 0, "medium": 1, "high": 2}
+    return max(events, key=lambda e: rank.get(e.severity, -1)).severity
+
+
+def _gnss_fix_lost_findings(
+    drops: list[AnomalyEvent],
+    recoveries: list[int],
+    bag_end_ns: int,
+) -> list[Finding]:
+    """Pair fix_drop events with the next recovery (or bag end) to form segments."""
+    findings: list[Finding] = []
+    by_topic: dict[str, list[AnomalyEvent]] = {}
+    for ev in drops:
+        by_topic.setdefault(ev.topic, []).append(ev)
+
+    for topic, topic_drops in by_topic.items():
+        topic_drops.sort(key=lambda e: e.timestamp_ns)
+        topic_recoveries = sorted(recoveries) if isinstance(recoveries, list) else []
+        recovery_idx = 0
+        for drop in topic_drops:
+            while (
+                recovery_idx < len(topic_recoveries)
+                and topic_recoveries[recovery_idx] <= drop.timestamp_ns
+            ):
+                recovery_idx += 1
+            if recovery_idx < len(topic_recoveries):
+                end_ns = topic_recoveries[recovery_idx]
+                recovered = True
+                recovery_idx += 1
+            else:
+                end_ns = max(drop.timestamp_ns, bag_end_ns)
+                recovered = False
+            findings.append(
+                Finding(
+                    id=finding_id("anomaly", "gnss", "fix_lost", clean_topic_token(topic)),
+                    title=f"GNSS fix lost on {topic}",
+                    severity="warning",
+                    category="sensor_quality",
+                    affected_topics=[topic],
+                    time_range=TimeRange(start_ns=drop.timestamp_ns, end_ns=end_ns),
+                    evidence=[
+                        Evidence(
+                            metric="duration_sec",
+                            observed=(end_ns - drop.timestamp_ns) / 1e9,
+                            unit="s",
+                            topic=topic,
+                        ),
+                        Evidence(
+                            metric="recovered",
+                            observed=recovered,
+                            topic=topic,
+                        ),
+                    ],
+                    suggested_action=(
+                        "Investigate GNSS signal loss — check antenna, sky view, and receiver health."
+                    ),
+                )
+            )
+    return findings
+
+
+def _cluster_events(
+    events: list[AnomalyEvent],
+    gap_ns: int,
+) -> list[list[AnomalyEvent]]:
+    """Cluster sorted events into runs where adjacent timestamps are within gap_ns."""
+    clusters: list[list[AnomalyEvent]] = []
+    current: list[AnomalyEvent] = []
+    for ev in sorted(events, key=lambda e: e.timestamp_ns):
+        if current and ev.timestamp_ns - current[-1].timestamp_ns > gap_ns:
+            clusters.append(current)
+            current = []
+        current.append(ev)
+    if current:
+        clusters.append(current)
+    return clusters
+
+
+def _cluster_to_finding(
+    cluster: list[AnomalyEvent],
+    *,
+    topic: str,
+    anomaly_type: str,
+    median_interval_ns: int,
+) -> Finding:
+    id_token, label = _ANOMALY_TYPE_META.get(anomaly_type, (anomaly_type, anomaly_type))
+    start_ns = cluster[0].timestamp_ns
+    end_ns = cluster[-1].timestamp_ns
+
+    # For point-event types (spikes, jumps), the cluster's time_range spans
+    # first → last event. For gap types, expand the start backwards by the
+    # median interval so the range reflects the actual gap span, not just its
+    # tail timestamp.
+    is_gap_type = anomaly_type in {"rate_gap", "imu_frequency_drop"}
+    if is_gap_type and median_interval_ns > 0 and len(cluster) == 1:
+        start_ns = max(0, start_ns - median_interval_ns)
+
+    worst = _max_anomaly_severity(cluster)
+    severity = _ANOMALY_TO_FINDING_SEVERITY.get(worst, "warning")
+    n = len(cluster)
+    title = f"{label} on {topic}" if n == 1 else f"{label} on {topic} ({n} events)"
+
+    evidence = [
+        Evidence(metric="event_count", observed=n, topic=topic),
+        Evidence(metric="worst_severity", observed=worst, topic=topic),
+    ]
+    if n == 1:
+        evidence.append(Evidence(metric="description", observed=cluster[0].description, topic=topic))
+
+    return Finding(
+        id=finding_id("anomaly", id_token, clean_topic_token(topic)),
+        title=title,
+        severity=severity,  # type: ignore[arg-type]
+        category="sensor_quality",
+        affected_topics=[topic],
+        evidence=evidence,
+        time_range=TimeRange(start_ns=start_ns, end_ns=end_ns),
+    )
+
+
+def _anomaly_events_to_findings(
+    events: list[AnomalyEvent],
+    *,
+    gnss_recoveries: dict[str, list[int]],
+    interval_by_topic: dict[str, int],
+    bag_end_ns: int,
+) -> list[Finding]:
+    """Aggregate raw anomaly events into temporal Findings.
+
+    GNSS fix_drop events are paired with the next recovery (or bag end) to
+    form fix-lost segments. All other anomaly types are clustered by
+    (topic, type) using :data:`FINDING_CLUSTER_GAP_NS` so bursts of related
+    events collapse into a single readiness finding.
+    """
+    findings: list[Finding] = []
+
+    drops = [e for e in events if e.type == "gnss_fix_drop"]
+    if drops:
+        for topic in {e.topic for e in drops}:
+            topic_drops = [e for e in drops if e.topic == topic]
+            findings.extend(
+                _gnss_fix_lost_findings(
+                    topic_drops,
+                    gnss_recoveries.get(topic, []),
+                    bag_end_ns,
+                )
+            )
+
+    by_key: dict[tuple[str, str], list[AnomalyEvent]] = {}
+    for ev in events:
+        if ev.type == "gnss_fix_drop":
+            continue  # handled above
+        by_key.setdefault((ev.topic, ev.type), []).append(ev)
+
+    for (topic, anomaly_type), bucket in by_key.items():
+        clusters = _cluster_events(bucket, FINDING_CLUSTER_GAP_NS)
+        for idx, cluster in enumerate(clusters):
+            finding = _cluster_to_finding(
+                cluster,
+                topic=topic,
+                anomaly_type=anomaly_type,
+                median_interval_ns=interval_by_topic.get(topic, 0),
+            )
+            # When a (topic, type) yields multiple clusters, disambiguate ids by
+            # appending the cluster index so each segment is independently
+            # addressable in diff/benchmark workflows.
+            if len(clusters) > 1:
+                finding.id = f"{finding.id}.{idx}"
+            findings.append(finding)
+
+    findings.sort(key=lambda f: (
+        f.time_range.start_ns if f.time_range else 0,
+        f.id,
+    ))
+    return findings
+
+
 def print_anomaly_report(report: AnomalyReport, console: Console | None = None) -> None:
     """Pretty-print an anomaly detection report."""
     if console is None:
@@ -400,4 +636,30 @@ def print_anomaly_report(report: AnomalyReport, console: Console | None = None) 
             console.print(
                 f"  [red]{event.timestamp_sec:.1f}s[/red] {event.topic}: {event.description}"
             )
+
+    if report.findings:
+        console.print(f"\n[bold]Temporal findings ({len(report.findings)}):[/bold]")
+        for f in report.findings[:10]:
+            tr = f.time_range
+            if tr and tr.start_ns == tr.end_ns:
+                span = f"t={tr.start_ns / 1e9:.1f}s"
+            elif tr:
+                span = f"t={tr.start_ns / 1e9:.1f}-{tr.end_ns / 1e9:.1f}s"
+            else:
+                span = "bag-global"
+            style = _SEVERITY_STYLE.get(f.severity, "white")
+            console.print(
+                f"  [{style}]{f.severity:<7}[/{style}] [dim]{span}[/dim] "
+                f"[bold]{f.id}[/bold] — {f.title}"
+            )
+        if len(report.findings) > 10:
+            console.print(f"  [dim]... and {len(report.findings) - 10} more[/dim]")
     console.print()
+
+
+_SEVERITY_STYLE = {
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "critical": "bold red",
+}
