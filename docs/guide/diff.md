@@ -35,6 +35,23 @@ When a finding stays the same severity (`SAME`), `bagx diff` still surfaces
 finding. The default drift threshold is 10% relative change. Non-numeric
 evidence is reported when the string representation differs.
 
+## Temporal findings
+
+Findings with a `time_range` (e.g. `anomaly.gnss.fix_lost.<topic>` from
+`bagx eval --include-anomaly`) are matched segment-by-segment within the
+same id:
+
+- **Overlapping ranges** count as the *same* segment — a slightly-shifted
+  fix-lost window compares as `WORSE` / `BETTER` / `SAME` rather than
+  `GONE`+`NEW`.
+- **Disjoint ranges** count as *different* segments — a new fault window
+  shows up as a separate `NEW` change next to the existing one.
+
+The `text` and `markdown` renderers add a segment column / line showing
+`t=<start>-<end>s` for the affected window. Pre-1.3 reports without
+`time_range` continue to join by id alone, so existing CI pipelines keep
+working unchanged.
+
 ## Output formats
 
 - `text` (default): coloured terminal output, one line per change.

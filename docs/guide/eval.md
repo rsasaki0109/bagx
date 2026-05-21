@@ -11,6 +11,7 @@ bagx eval recording.db3 --rules warehouse_bot
 bagx eval recording.db3 --findings-only
 bagx eval recording.db3 --severity-min warning
 bagx eval recording.db3 --findings-only --severity-min error
+bagx eval recording.db3 --include-anomaly       # also merge fix-lost / spike segments
 ```
 
 ### Output filtering
@@ -20,6 +21,10 @@ bagx eval recording.db3 --findings-only --severity-min error
 - `--severity-min {info|warning|error|critical}` filters the findings list to
   that severity or higher. Applied to both the `--findings-only` text view and
   the `--json` payload.
+- `--include-anomaly` also runs anomaly detection and merges the resulting
+  **temporal findings** (with `time_range`) into the report. Useful when the
+  eval output is destined for `bagx diff` or `bagx benchmark` CI gates. Off
+  by default because it re-reads the bag.
 
 ## What it measures
 
@@ -82,6 +87,7 @@ ids and never depend on recommendation text.
 | `evidence` | object[] | Measured facts: `metric`, `observed`, optional `expected`, `unit`, `topic`. |
 | `suggested_action` | string \| null | Recommended next step. |
 | `confidence` | `low` / `medium` / `high` | Defaults to `medium`. |
+| `time_range` | object \| null | Optional `{start_ns, end_ns}` (absolute ROS time) for findings scoped to a sub-interval of the bag — see [Temporal findings](#temporal-findings). |
 
 ### Severity policy
 
@@ -120,6 +126,38 @@ schema = findings_schema()       # parsed dict, cached
 
 Use it from external tools (Grafana, Slack bots, GitHub Actions) to validate
 finding payloads without depending on bagx's Python runtime.
+
+### Temporal findings
+
+A finding may carry a `time_range` object that scopes it to a sub-interval of
+the bag. When `--include-anomaly` is set, the anomaly engine aggregates raw
+events into temporal findings:
+
+- `anomaly.gnss.fix_lost.<topic>` — segment from drop to recovery (or bag
+  end if no recovery). Evidence includes `duration_sec` and `recovered`.
+- `anomaly.imu.accel_spike.<topic>` / `anomaly.imu.gyro_spike.<topic>` —
+  clusters of spike events within a 30 s window.
+- `anomaly.imu.frequency_drop.<topic>` / `anomaly.rate.gap.<topic>` —
+  message gap spans.
+
+```json
+{
+  "id": "anomaly.gnss.fix_lost.gnss",
+  "title": "GNSS fix lost on /gnss",
+  "severity": "warning",
+  "category": "sensor_quality",
+  "affected_topics": ["/gnss"],
+  "time_range": {"start_ns": 1700000009000000000, "end_ns": 1700000009900000000},
+  "evidence": [
+    {"metric": "duration_sec", "observed": 0.9, "unit": "s", "topic": "/gnss"},
+    {"metric": "recovered", "observed": false, "topic": "/gnss"}
+  ]
+}
+```
+
+`bagx diff` matches temporal findings segment-by-segment by `time_range`
+overlap, and `bagx benchmark` accepts a `time_range_overlap` constraint —
+see [diff](diff.md) and [benchmark](benchmark.md#expected-findings).
 
 ## Custom message stacks
 

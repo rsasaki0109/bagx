@@ -94,6 +94,21 @@ Each item can be either a bare string (id only) or an object. When an object is
 given, `severity`, `domain`, `category`, and `affected_topics` are checked
 individually and produce separate `expected_finding_*` sub-checks in the report.
 
+For **temporal findings** (with a `time_range`), an `time_range_overlap`
+constraint scopes the match to a window of the bag — pass when the finding's
+time_range overlaps the window:
+
+```json
+{
+  "id": "anomaly.gnss.fix_lost.gnss",
+  "time_range_overlap": {"start_ns": 120000000000, "end_ns": 145000000000}
+}
+```
+
+Useful for "GNSS must be lost only during the parked phase" style
+expectations. Requires the eval report to include temporal findings — run
+`bagx eval --include-anomaly` upstream.
+
 ### forbidden_findings
 
 The inverse of `expected_findings` — fail when listed ids appear. Each item can
@@ -113,6 +128,11 @@ be either a bare string (id only) or an object with a `severity_min` scope:
 With `severity_min`, the finding is only forbidden when its severity is at or
 above the threshold — letting an info-level appearance through while gating on
 the worse cases.
+
+`forbidden_findings` also accepts `time_range_overlap` (same shape as in
+`expected_findings`). Both qualifiers compose: the rule fires only when a
+matching finding has severity ≥ `severity_min` **and** overlaps the
+constraint window — useful for "no fix-lost during autonomy phase".
 
 ### max_severity
 
@@ -139,7 +159,7 @@ and structural severity.
 
 ## JSON contract
 
-Benchmark JSON reports (schema_version 1.2.0+) include:
+Benchmark JSON reports (schema_version 1.3.0+) include:
 
 - `schema_version`
 - `report_type`

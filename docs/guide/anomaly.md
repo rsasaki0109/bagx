@@ -32,3 +32,19 @@ bagx anomaly recording.db3 --json anomalies.json
 | **high** | Likely sensor failure or data corruption |
 | **medium** | Unusual but may be legitimate (e.g., rapid maneuver) |
 | **low** | Minor deviation, informational |
+
+## Temporal findings
+
+Each anomaly run also produces a `findings` array — raw events aggregated
+into structured `Finding` objects with `time_range` (absolute ROS time
+nanoseconds). GNSS fix-drop events are paired with the next recovery (or
+the bag end) to form `anomaly.gnss.fix_lost.<topic>` segments; other event
+types cluster by `(topic, type)` within a 30 second window.
+
+Anomaly severities map to finding severities as `low → info`,
+`medium → warning`, `high → error`.
+
+For CI workflows, prefer `bagx eval --include-anomaly` so the temporal
+findings ship alongside the rest of the eval report and can be gated with
+`bagx diff` or `bagx benchmark`. See
+[eval — Temporal findings](eval.md#temporal-findings).
