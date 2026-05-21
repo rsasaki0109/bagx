@@ -26,3 +26,9 @@ env/
 export/
 site/
 .cache/
+
+# Local working notes (per-release plans, status snapshots).
+# Kept out of the repo; durable context lives in CLAUDE.md and the auto-memory.
+PLAN.md
+PLAN_v*.md
+gpt_pro_status.md
