@@ -407,3 +407,154 @@ class TestBenchmarkSeverityGate:
         )
         assert result.exit_code == 2
         assert "--exit-on" in result.output
+
+
+def _temporal_finding(
+    fid: str,
+    severity: str,
+    start_ns: int,
+    end_ns: int,
+    *,
+    category: str = "sensor_quality",
+) -> dict:
+    return {
+        "id": fid,
+        "title": f"finding {fid}",
+        "severity": severity,
+        "category": category,
+        "domain": None,
+        "affected_topics": [],
+        "evidence": [],
+        "suggested_action": None,
+        "confidence": "medium",
+        "time_range": {"start_ns": start_ns, "end_ns": end_ns},
+    }
+
+
+class TestExpectedFindingTimeRangeOverlap:
+    """Phase D: expected_findings supports time_range_overlap constraint."""
+
+    def test_passes_when_overlap_present(self):
+        from bagx.benchmark import _evaluate_expected_finding
+        findings = [_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)]
+        expected = {
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "time_range_overlap": {"start_ns": 15_000_000_000, "end_ns": 25_000_000_000},
+        }
+        checks = _evaluate_expected_finding(expected, findings)
+        primary = checks[0]
+        assert primary.passed
+        assert "overlap" in primary.name
+
+    def test_fails_when_no_overlap(self):
+        from bagx.benchmark import _evaluate_expected_finding
+        findings = [_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)]
+        expected = {
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "time_range_overlap": {"start_ns": 100_000_000_000, "end_ns": 200_000_000_000},
+        }
+        checks = _evaluate_expected_finding(expected, findings)
+        assert not checks[0].passed
+
+    def test_fails_when_finding_has_no_time_range(self):
+        """A finding without time_range cannot satisfy a time_range_overlap constraint."""
+        from bagx.benchmark import _evaluate_expected_finding
+        findings = [{
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "severity": "warning",
+            "category": "sensor_quality",
+        }]
+        expected = {
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "time_range_overlap": {"start_ns": 0, "end_ns": 1_000_000_000},
+        }
+        checks = _evaluate_expected_finding(expected, findings)
+        assert not checks[0].passed
+
+    def test_backward_compat_when_constraint_absent(self):
+        """Without time_range_overlap, the old id-only matching behavior holds."""
+        from bagx.benchmark import _evaluate_expected_finding
+        findings = [_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)]
+        checks = _evaluate_expected_finding({"id": "anomaly.gnss.fix_lost.gnss"}, findings)
+        assert checks[0].passed
+        assert "overlap" not in checks[0].name
+
+
+class TestForbiddenFindingTimeRangeOverlap:
+    """Phase D: forbidden_findings supports time_range_overlap constraint."""
+
+    def test_forbids_when_overlap_present(self):
+        from bagx.benchmark import _evaluate_forbidden_finding
+        findings = [_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)]
+        forbidden = {
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "time_range_overlap": {"start_ns": 15_000_000_000, "end_ns": 25_000_000_000},
+        }
+        checks = _evaluate_forbidden_finding(forbidden, findings)
+        assert not checks[0].passed
+
+    def test_allows_when_no_overlap(self):
+        """fix_lost outside the critical window is acceptable."""
+        from bagx.benchmark import _evaluate_forbidden_finding
+        findings = [_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)]
+        forbidden = {
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "time_range_overlap": {"start_ns": 100_000_000_000, "end_ns": 200_000_000_000},
+        }
+        checks = _evaluate_forbidden_finding(forbidden, findings)
+        assert checks[0].passed
+
+    def test_combines_severity_min_and_overlap(self):
+        """Both constraints must hit for a forbidden finding to fire."""
+        from bagx.benchmark import _evaluate_forbidden_finding
+        findings = [
+            _temporal_finding("anomaly.gnss.fix_lost.gnss", "info", 10_000_000_000, 20_000_000_000),
+            _temporal_finding("anomaly.gnss.fix_lost.gnss", "error", 100_000_000_000, 110_000_000_000),
+        ]
+        forbidden = {
+            "id": "anomaly.gnss.fix_lost.gnss",
+            "severity_min": "warning",
+            "time_range_overlap": {"start_ns": 15_000_000_000, "end_ns": 25_000_000_000},
+        }
+        # The overlapping match is info (below threshold); the warning+ match is outside the window
+        checks = _evaluate_forbidden_finding(forbidden, findings)
+        assert checks[0].passed
+        # Constraint name should mention both qualifiers
+        assert "severity>=warning" in checks[0].name
+        assert "overlap" in checks[0].name
+
+
+class TestBenchmarkSuiteTemporalIntegration:
+    """End-to-end: a manifest with time_range_overlap runs through the suite."""
+
+    def test_manifest_expected_finding_with_overlap_constraint(
+        self, tmp_path: Path, gnss_bag: Path
+    ):
+        """gnss_bag's fix_drop emits a fix_lost segment; require it to overlap with the expected window."""
+        # Run an eval first to inspect the actual time_range, then construct a manifest
+        from bagx.anomaly import detect_anomalies
+        rpt = detect_anomalies(str(gnss_bag))
+        fix_lost = next(f for f in rpt.findings if "fix_lost" in f.id)
+        assert fix_lost.time_range is not None
+        mid = (fix_lost.time_range.start_ns + fix_lost.time_range.end_ns) // 2
+
+        # bagx benchmark uses bagx eval, not bagx anomaly — so temporal findings
+        # from anomaly aren't part of evaluate_bag yet. This test documents the
+        # boundary: the helper accepts the constraint, but the bag-level CLI
+        # surface needs Phase 1B to wire anomaly findings into eval.
+        from bagx.benchmark import _evaluate_expected_finding
+        synthetic = [{
+            "id": fix_lost.id,
+            "title": fix_lost.title,
+            "severity": fix_lost.severity,
+            "category": fix_lost.category,
+            "time_range": fix_lost.time_range.to_dict(),
+        }]
+        checks = _evaluate_expected_finding(
+            {
+                "id": fix_lost.id,
+                "time_range_overlap": {"start_ns": mid - 1, "end_ns": mid + 1},
+            },
+            synthetic,
+        )
+        assert checks[0].passed, f"expected overlap match, got {checks[0].detail}"

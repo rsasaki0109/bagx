@@ -336,17 +336,29 @@ def _evaluate_expected_finding(
         expected_topics: list[str] = []
         expected_domain = None
         expected_category = None
+        overlap_constraint: dict[str, Any] | None = None
     else:
         finding_id = str(expected.get("id", ""))
         expected_severity = expected.get("severity")
         expected_topics = [str(topic) for topic in expected.get("affected_topics", [])]
         expected_domain = expected.get("domain")
         expected_category = expected.get("category")
+        overlap_constraint = expected.get("time_range_overlap")
 
-    matches = [finding for finding in findings if finding.get("id") == finding_id]
+    candidates = [finding for finding in findings if finding.get("id") == finding_id]
+    if overlap_constraint is not None:
+        matches = [
+            f for f in candidates
+            if _finding_overlaps_constraint(f, overlap_constraint)
+        ]
+        suffix = f" (overlap {_format_constraint(overlap_constraint)})"
+    else:
+        matches = candidates
+        suffix = ""
+
     checks = [
         BenchmarkCheck(
-            name=f"expected_finding:{finding_id}",
+            name=f"expected_finding:{finding_id}{suffix}",
             passed=bool(matches),
             detail="present" if matches else "missing",
         )
@@ -394,24 +406,35 @@ def _evaluate_forbidden_finding(
 ) -> list[BenchmarkCheck]:
     """Fail if a forbidden finding id appears.
 
-    A dict form like {"id": "x", "severity_min": "warning"} only forbids the
-    finding when its severity is at or above severity_min — useful when an info
-    finding is acceptable but warning+ is not.
+    Dict form options:
+        ``severity_min`` — only forbid when severity >= severity_min
+        ``time_range_overlap`` — only forbid when the finding's time_range
+        overlaps the given {start_ns, end_ns}, so a fix-lost segment outside
+        a critical window can be tolerated.
     """
     if isinstance(forbidden, str):
         finding_id = forbidden
         severity_min = None
+        overlap_constraint: dict[str, Any] | None = None
     else:
         finding_id = str(forbidden.get("id", ""))
         severity_min = forbidden.get("severity_min")
+        overlap_constraint = forbidden.get("time_range_overlap")
 
     matches = [f for f in findings if f.get("id") == finding_id]
     if severity_min:
         matches = [
             f for f in matches if severity_at_least(str(f.get("severity", "")), severity_min)
         ]
+    if overlap_constraint is not None:
+        matches = [f for f in matches if _finding_overlaps_constraint(f, overlap_constraint)]
 
-    suffix = f" (severity>={severity_min})" if severity_min else ""
+    qualifiers: list[str] = []
+    if severity_min:
+        qualifiers.append(f"severity>={severity_min}")
+    if overlap_constraint is not None:
+        qualifiers.append(f"overlap {_format_constraint(overlap_constraint)}")
+    suffix = f" ({', '.join(qualifiers)})" if qualifiers else ""
     return [
         BenchmarkCheck(
             name=f"forbidden_finding:{finding_id}{suffix}",
@@ -419,6 +442,32 @@ def _evaluate_forbidden_finding(
             detail="absent" if not matches else f"present (severity={matches[0].get('severity')})",
         )
     ]
+
+
+def _finding_overlaps_constraint(
+    finding: dict[str, Any], constraint: dict[str, Any]
+) -> bool:
+    """True when the finding's time_range overlaps the given constraint window."""
+    tr = finding.get("time_range")
+    if not isinstance(tr, dict):
+        return False
+    try:
+        f_start = int(tr["start_ns"])
+        f_end = int(tr["end_ns"])
+        c_start = int(constraint["start_ns"])
+        c_end = int(constraint["end_ns"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return f_start <= c_end and c_start <= f_end
+
+
+def _format_constraint(constraint: dict[str, Any]) -> str:
+    try:
+        start = int(constraint["start_ns"]) / 1e9
+        end = int(constraint["end_ns"]) / 1e9
+    except (KeyError, TypeError, ValueError):
+        return "?"
+    return f"t={start:.1f}-{end:.1f}s"
 
 
 def _evaluate_max_severity(
