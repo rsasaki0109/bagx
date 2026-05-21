@@ -95,6 +95,21 @@ observed state, so passing states are also benchmark-checkable:
 
 Use these ids in benchmark manifests via [`expected_findings`](benchmark.md#expected-findings).
 
+### JSON Schema
+
+bagx ships a JSON Schema describing the Finding object at
+`bagx/schema/findings.schema.json` (Draft 2020-12). Locate it from Python:
+
+```python
+from bagx.contracts import findings_schema_path, findings_schema
+
+print(findings_schema_path())   # absolute path to the .json file
+schema = findings_schema()       # parsed dict, cached
+```
+
+Use it from external tools (Grafana, Slack bots, GitHub Actions) to validate
+finding payloads without depending on bagx's Python runtime.
+
 ## Custom message stacks
 
 If your bag uses custom messages, you can still layer in domain-specific checks with `--rules`.

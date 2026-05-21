@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rsasaki0109.github.io/bagx/schema/findings.schema.json",
+  "title": "bagx Finding",
+  "description": "Structured readiness finding emitted by bagx eval (schema_version 1.1.0+). One Finding is a stable, machine-readable readiness result for a recorded ROS2 bag.",
+  "type": "object",
+  "required": ["id", "title", "severity", "category"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable lowercase identifier in the form '<domain>.<area>.<qualifier>'. Used by benchmark expected_findings and bagx diff.",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "description": "One-line human-readable label.",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "error", "critical"],
+      "description": "info: healthy or informational. warning: degraded but usable. error: unreliable, should not be used as-is. critical: reserved for catastrophic readiness loss (not emitted by built-in checks today)."
+    },
+    "category": {
+      "type": "string",
+      "description": "Coarse grouping. Built-in values: domain_detection, sensor_quality, topic_presence, rate_quality, sync_quality, workflow_observability, workflow_outcome, custom_rules. Plugins may introduce additional categories.",
+      "minLength": 1
+    },
+    "domain": {
+      "type": ["string", "null"],
+      "description": "Domain identifier (slam, nav2, autoware, moveit, perception, robotarm, or a custom domain id). Null when the finding is not domain-specific."
+    },
+    "affected_topics": {
+      "type": "array",
+      "description": "Topics this finding refers to. May be empty when the finding is global.",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Measured facts behind the finding.",
+      "items": {"$ref": "#/$defs/evidence"},
+      "default": []
+    },
+    "suggested_action": {
+      "type": ["string", "null"],
+      "description": "Recommended next step for the user. Null when no action is needed."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Confidence in the finding. Defaults to medium.",
+      "default": "medium"
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "title": "bagx Evidence",
+      "description": "One measured or observed fact supporting a Finding.",
+      "required": ["metric", "observed"],
+      "additionalProperties": false,
+      "properties": {
+        "metric": {
+          "type": "string",
+          "description": "Short metric identifier (e.g. fix_rate, accel_noise_mean, mean_delay_ms).",
+          "minLength": 1
+        },
+        "observed": {
+          "description": "Observed value. May be a number, boolean, string, array, or object depending on the metric.",
+          "type": ["number", "boolean", "string", "array", "object", "null"]
+        },
+        "expected": {
+          "description": "Expected value or threshold expression (e.g. '>=0.95', '<20'). May be null when no fixed expectation applies.",
+          "type": ["number", "boolean", "string", "array", "object", "null"]
+        },
+        "unit": {
+          "type": ["string", "null"],
+          "description": "SI-style unit for the observed value (e.g. Hz, ms, m/s^2, rad/s). Null when the metric is unitless."
+        },
+        "topic": {
+          "type": ["string", "null"],
+          "description": "ROS2 topic this evidence refers to. Null when the metric is global."
+        }
+      }
+    }
+  }
+}
