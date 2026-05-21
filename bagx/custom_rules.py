@@ -11,6 +11,8 @@ from typing import Any
 
 import numpy as np
 
+_ALLOWED_CHECK_SEVERITIES = {"info", "warning", "error", "critical"}
+
 
 @dataclass
 class TopicSelector:
@@ -37,6 +39,7 @@ class CustomRuleCheck:
     target_ms: float | None = None
     max_response_ms: float = 2000.0
     min_samples: int = 1
+    severity: str = "warning"
 
 
 @dataclass
@@ -58,6 +61,26 @@ class CustomRuleSet:
 
 
 @dataclass
+class CustomCheckResult:
+    """Result of evaluating one ``CustomRuleCheck`` against a bag.
+
+    Each entry corresponds to one check definition. ``status`` captures the
+    high-level pass/fail outcome that drives per-check finding emission, while
+    ``severity`` is the severity to attach when the check fails (configured per
+    rule; defaults to ``warning``).
+    """
+
+    kind: str
+    label: str
+    status: str  # "pass" / "fail" / "skipped"
+    score: float | None
+    severity: str = "warning"
+    matched_topics: list[str] = field(default_factory=list)
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+    detail: str = ""
+
+
+@dataclass
 class CustomDomainResult:
     """Evaluation result for one matched custom domain."""
 
@@ -65,6 +88,7 @@ class CustomDomainResult:
     score: float
     matched_topics: list[str] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
+    checks: list[CustomCheckResult] = field(default_factory=list)
 
 
 @dataclass
@@ -127,24 +151,25 @@ def evaluate_custom_rule_set(
             continue
 
         recs = [f"[bold cyan]{domain.name} custom rules matched[/bold cyan]"]
-        scores: list[float] = []
+        check_results: list[CustomCheckResult] = []
         for check in domain.checks:
-            check_score = _evaluate_check(
+            result = _evaluate_check(
                 check=check,
                 topic_info=topic_info,
                 topic_timestamps=topic_timestamps,
                 recommendations=recs,
             )
-            if check_score is not None:
-                scores.append(check_score)
+            check_results.append(result)
 
-        score = float(np.mean(scores)) if scores else 100.0
+        scored = [result.score for result in check_results if result.score is not None]
+        score = float(np.mean(scored)) if scored else 100.0
         results.append(
             CustomDomainResult(
                 name=domain.name,
                 score=score,
                 matched_topics=sorted(set(matched_topic_names)),
                 recommendations=recs,
+                checks=check_results,
             )
         )
 
@@ -308,6 +333,12 @@ def _validate_check_document(data: Any, path: str, errors: list[str]) -> None:
             int(data["min_samples"])
         except (TypeError, ValueError):
             errors.append(f"{path}.min_samples: must be an integer")
+    if "severity" in data:
+        severity = str(data["severity"]).strip().lower()
+        if severity not in _ALLOWED_CHECK_SEVERITIES:
+            errors.append(
+                f"{path}.severity: must be one of {sorted(_ALLOWED_CHECK_SEVERITIES)}"
+            )
 
 
 def _validate_selector(data: Any, path: str, errors: list[str]) -> None:
@@ -513,6 +544,12 @@ def _parse_check(data: dict[str, Any]) -> CustomRuleCheck:
     target_ms = float(data["target_ms"]) if "target_ms" in data else None
     max_response_ms = float(data.get("max_response_ms", 2000.0))
     min_samples = int(data.get("min_samples", 1))
+    severity = str(data.get("severity", "warning")).strip().lower()
+    if severity not in _ALLOWED_CHECK_SEVERITIES:
+        raise ValueError(
+            f"unsupported custom rule check severity: {severity!r} "
+            f"(allowed: {sorted(_ALLOWED_CHECK_SEVERITIES)})"
+        )
 
     if kind in {"topic_exists", "topic_rate"} and selector is None:
         raise ValueError(f"{kind} check requires 'selector'")
@@ -536,6 +573,7 @@ def _parse_check(data: dict[str, Any]) -> CustomRuleCheck:
         target_ms=target_ms,
         max_response_ms=max_response_ms,
         min_samples=max(min_samples, 1),
+        severity=severity,
     )
 
 
@@ -545,47 +583,107 @@ def _evaluate_check(
     topic_info: dict[str, dict[str, Any]],
     topic_timestamps: dict[str, list[int]],
     recommendations: list[str],
-) -> float | None:
+) -> CustomCheckResult:
     if check.kind == "topic_exists":
         matches = select_topics(topic_info, check.selector) if check.selector else []
         if matches:
-            recommendations.append(
-                f"  [green]:heavy_check_mark:[/green] {check.label} ({matches[0]}) recorded — custom rule matched"
+            detail = (
+                f"  [green]:heavy_check_mark:[/green] {check.label} ({matches[0]}) "
+                f"recorded — custom rule matched"
             )
-            return 100.0
-        recommendations.append(
-            f"  [yellow]:warning:[/yellow] {check.label} missing — custom rule not satisfied"
+            recommendations.append(detail)
+            return CustomCheckResult(
+                kind=check.kind,
+                label=check.label,
+                status="pass",
+                score=100.0,
+                severity=check.severity,
+                matched_topics=[matches[0]],
+                evidence=[{"metric": "topic_present", "observed": True, "expected": True, "topic": matches[0]}],
+                detail=detail,
+            )
+        detail = f"  [yellow]:warning:[/yellow] {check.label} missing — custom rule not satisfied"
+        recommendations.append(detail)
+        return CustomCheckResult(
+            kind=check.kind,
+            label=check.label,
+            status="fail",
+            score=0.0,
+            severity=check.severity,
+            matched_topics=[],
+            evidence=[{"metric": "topic_present", "observed": False, "expected": True}],
+            detail=detail,
         )
-        return 0.0
 
     if check.kind == "topic_rate":
         matches = select_topics(topic_info, check.selector) if check.selector else []
+        target_hz = float(check.min_rate_hz or 0.0)
         if not matches:
-            recommendations.append(
-                f"  [yellow]:warning:[/yellow] {check.label} missing — custom rule not satisfied"
+            detail = f"  [yellow]:warning:[/yellow] {check.label} missing — custom rule not satisfied"
+            recommendations.append(detail)
+            return CustomCheckResult(
+                kind=check.kind,
+                label=check.label,
+                status="fail",
+                score=0.0,
+                severity=check.severity,
+                matched_topics=[],
+                evidence=[
+                    {"metric": "topic_present", "observed": False, "expected": True},
+                    {"metric": "rate_hz", "observed": None, "expected": f">={target_hz:.3g}", "unit": "Hz"},
+                ],
+                detail=detail,
             )
-            return 0.0
         topic_name = matches[0]
         rate_hz = float(topic_info[topic_name].get("rate_hz", 0.0) or 0.0)
-        score = _rate_goal_score(rate_hz, float(check.min_rate_hz or 0.0))
-        if rate_hz >= float(check.min_rate_hz or 0.0):
-            recommendations.append(
-                f"  [green]:heavy_check_mark:[/green] {check.label} ({topic_name}) at {_format_rate_hz(rate_hz)}Hz — custom rule satisfied"
+        score = _rate_goal_score(rate_hz, target_hz)
+        evidence = [
+            {"metric": "rate_hz", "observed": round(rate_hz, 3), "expected": f">={target_hz:.3g}", "unit": "Hz", "topic": topic_name},
+        ]
+        if rate_hz >= target_hz:
+            detail = (
+                f"  [green]:heavy_check_mark:[/green] {check.label} ({topic_name}) "
+                f"at {_format_rate_hz(rate_hz)}Hz — custom rule satisfied"
             )
+            status = "pass"
         else:
-            recommendations.append(
-                f"  [yellow]:warning:[/yellow] {check.label} ({topic_name}) at {_format_rate_hz(rate_hz)}Hz — {float(check.min_rate_hz or 0.0):.0f}Hz+ expected by custom rule"
+            detail = (
+                f"  [yellow]:warning:[/yellow] {check.label} ({topic_name}) "
+                f"at {_format_rate_hz(rate_hz)}Hz — {target_hz:.0f}Hz+ expected by custom rule"
             )
-        return score
+            status = "fail"
+        recommendations.append(detail)
+        return CustomCheckResult(
+            kind=check.kind,
+            label=check.label,
+            status=status,
+            score=score,
+            severity=check.severity,
+            matched_topics=[topic_name],
+            evidence=evidence,
+            detail=detail,
+        )
 
     if check.kind == "latency":
         input_matches = select_topics(topic_info, check.input_selector) if check.input_selector else []
         output_matches = select_topics(topic_info, check.output_selector) if check.output_selector else []
+        target_ms = float(check.target_ms or 0.0)
         if not input_matches or not output_matches:
-            recommendations.append(
-                f"  [yellow]:warning:[/yellow] {check.label} latency could not be evaluated — required topics are missing"
+            detail = (
+                f"  [yellow]:warning:[/yellow] {check.label} latency could not be evaluated "
+                f"— required topics are missing"
             )
-            return 0.0
+            recommendations.append(detail)
+            return CustomCheckResult(
+                kind=check.kind,
+                label=check.label,
+                status="skipped",
+                score=0.0,
+                severity=check.severity,
+                matched_topics=[*input_matches[:1], *output_matches[:1]],
+                evidence=[{"metric": "topics_present", "observed": False, "expected": True}],
+                detail=detail,
+            )
 
         input_topic = input_matches[0]
         output_topic = output_matches[0]
@@ -595,31 +693,65 @@ def _evaluate_check(
             max_response_ms=check.max_response_ms,
         )
         if len(latencies_ms) < check.min_samples:
-            recommendations.append(
-                f"  [yellow]:warning:[/yellow] {check.label} latency could not be evaluated — not enough samples"
+            detail = (
+                f"  [yellow]:warning:[/yellow] {check.label} latency could not be evaluated "
+                f"— not enough samples"
             )
-            return 0.0
+            recommendations.append(detail)
+            return CustomCheckResult(
+                kind=check.kind,
+                label=check.label,
+                status="skipped",
+                score=0.0,
+                severity=check.severity,
+                matched_topics=[input_topic, output_topic],
+                evidence=[
+                    {"metric": "sample_count", "observed": len(latencies_ms), "expected": f">={check.min_samples}"},
+                ],
+                detail=detail,
+            )
 
         median_lat = float(np.median(latencies_ms))
         p95_lat = float(np.percentile(latencies_ms, 95))
-        score = _latency_goal_score(median_lat, float(check.target_ms or 1.0))
+        score = _latency_goal_score(median_lat, max(target_ms, 1.0))
         sample_note = ""
         if len(latencies_ms) < 5:
             plural = "s" if len(latencies_ms) != 1 else ""
             sample_note = f" ({len(latencies_ms)} sample{plural})"
-        if median_lat <= float(check.target_ms or 0.0):
-            recommendations.append(
-                f"  [green]:heavy_check_mark:[/green] Pipeline {check.label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}"
+        evidence = [
+            {"metric": "latency_median_ms", "observed": round(median_lat, 3), "expected": f"<={target_ms:.3g}", "unit": "ms"},
+            {"metric": "latency_p95_ms", "observed": round(p95_lat, 3), "unit": "ms"},
+            {"metric": "sample_count", "observed": len(latencies_ms)},
+        ]
+        if median_lat <= target_ms:
+            detail = (
+                f"  [green]:heavy_check_mark:[/green] Pipeline {check.label}: "
+                f"{median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}"
             )
-        elif median_lat <= float(check.target_ms or 0.0) * 4:
-            recommendations.append(
-                f"  [yellow]:warning:[/yellow] Pipeline {check.label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — slower than custom target"
+            status = "pass"
+        elif median_lat <= target_ms * 4:
+            detail = (
+                f"  [yellow]:warning:[/yellow] Pipeline {check.label}: "
+                f"{median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — slower than custom target"
             )
+            status = "fail"
         else:
-            recommendations.append(
-                f"  [red]:x:[/red] Pipeline {check.label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — far slower than custom target"
+            detail = (
+                f"  [red]:x:[/red] Pipeline {check.label}: "
+                f"{median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — far slower than custom target"
             )
-        return score
+            status = "fail"
+        recommendations.append(detail)
+        return CustomCheckResult(
+            kind=check.kind,
+            label=check.label,
+            status=status,
+            score=score,
+            severity=check.severity,
+            matched_topics=[input_topic, output_topic],
+            evidence=evidence,
+            detail=detail,
+        )
 
     raise ValueError(f"unsupported custom rule check kind: {check.kind}")
 

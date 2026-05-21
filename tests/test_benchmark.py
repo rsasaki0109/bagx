@@ -558,3 +558,79 @@ class TestBenchmarkSuiteTemporalIntegration:
             synthetic,
         )
         assert checks[0].passed, f"expected overlap match, got {checks[0].detail}"
+
+
+class TestBenchmarkCustomCheckFindings:
+    """v0.4.0 Priority 2: benchmark can gate per-check custom findings."""
+
+    def test_expected_per_check_finding_id_passes(
+        self, tmp_path: Path, custom_rule_bag: Path, custom_rules_file: Path
+    ):
+        manifest_path = _write_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "warehouse-pass",
+                    "bag_path": str(custom_rule_bag),
+                    "rules_path": str(custom_rules_file),
+                    "expect": {
+                        "expected_findings": [
+                            {"id": "custom.warehousebot.wheel_odometry.pass"},
+                            {"id": "custom.warehousebot.mission_path.pass"},
+                        ],
+                    },
+                },
+            ],
+        )
+
+        report = run_benchmark_suite(str(manifest_path))
+
+        assert report.failed_cases == 0
+        ids = report.cases[0].finding_ids
+        assert "custom.warehousebot.wheel_odometry.pass" in ids
+        assert "custom.warehousebot.mission_path.pass" in ids
+
+    def test_forbidden_per_check_fail_blocks(
+        self, tmp_path: Path, custom_rule_bag: Path
+    ):
+        """A rule that demands an impossible rate fails the per-check finding,
+        and forbidden_findings catches it."""
+        rules_path = tmp_path / "strict_rules.json"
+        rules_path.write_text(json.dumps({
+            "domains": [
+                {
+                    "name": "WarehouseBot",
+                    "match_topics": [{"name_contains": "wheel_odom"}],
+                    "checks": [
+                        {
+                            "kind": "topic_rate",
+                            "label": "Wheel odom",
+                            "selector": {"name_contains": "wheel_odom"},
+                            "min_rate_hz": 1000,
+                            "severity": "error",
+                        }
+                    ],
+                }
+            ]
+        }))
+        manifest_path = _write_manifest(
+            tmp_path,
+            [
+                {
+                    "name": "warehouse-strict",
+                    "bag_path": str(custom_rule_bag),
+                    "rules_path": str(rules_path),
+                    "expect": {
+                        "forbidden_findings": [
+                            {"id": "custom.warehousebot.wheel_odom.fail", "severity_min": "error"},
+                        ],
+                    },
+                },
+            ],
+        )
+
+        report = run_benchmark_suite(str(manifest_path))
+
+        assert report.failed_cases == 1
+        case = report.cases[0]
+        assert "custom.warehousebot.wheel_odom.fail" in case.finding_ids

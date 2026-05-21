@@ -111,13 +111,58 @@ Every check requires `kind` and `label`. Additional fields depend on `kind`.
 
 | `kind` | Required | Optional | Purpose |
 | --- | --- | --- | --- |
-| `topic_exists` | `selector` | `min_samples` | Topic with at least one message must exist. |
-| `topic_rate` | `selector`, `min_rate_hz` | `min_samples` | Topic must publish above the rate. |
-| `latency` | `input`, `output`, `target_ms` | `max_response_ms`, `min_samples` | Median delay from input → output must be ≤ `target_ms`. |
+| `topic_exists` | `selector` | `min_samples`, `severity` | Topic with at least one message must exist. |
+| `topic_rate` | `selector`, `min_rate_hz` | `min_samples`, `severity` | Topic must publish above the rate. |
+| `latency` | `input`, `output`, `target_ms` | `max_response_ms`, `min_samples`, `severity` | Median delay from input → output must be ≤ `target_ms`. |
 
 All numeric fields (`min_rate_hz`, `target_ms`, `max_response_ms`) must be
 numbers; `min_samples` must be an integer. Invalid documents fail loading
 with a list of all detected schema errors at once, not one at a time.
+
+### Per-check severity
+
+Each check accepts an optional `severity` field that sets the finding
+severity emitted **when the check fails**. Defaults to `warning`. Allowed
+values are `info`, `warning`, `error`, and `critical`.
+
+```json
+{
+  "kind": "topic_rate",
+  "label": "Wheel odometry",
+  "selector": {"name_contains": "wheel_odom"},
+  "min_rate_hz": 20,
+  "severity": "error"
+}
+```
+
+Use `error` for checks that must hold for the bag to be usable at all, and
+keep `warning` for checks that flag degradation worth investigating.
+A passing check always emits an `info` finding regardless of the configured
+severity.
+
+## Per-check findings
+
+Each check emits an individual structured finding alongside the per-domain
+aggregate. Use the per-check ids in
+[`expected_findings`](benchmark.md#expected_findings) and
+[`forbidden_findings`](benchmark.md#forbidden_findings) to gate a single
+check rather than the whole custom domain.
+
+Id format:
+
+```
+custom.<domain_id>.<label_token>.{pass,fail,skipped}
+```
+
+- `<domain_id>` is the domain `name` lowercased with non-alphanumerics
+  replaced.
+- `<label_token>` is derived from the check `label` the same way.
+- The last token reflects evaluation outcome: `pass`, `fail`, or `skipped`
+  (latency without enough samples falls into `skipped`).
+
+The aggregate `custom.<domain_id>.evaluated` finding is still emitted and
+remains a good high-level signal; reach for per-check ids when you need to
+gate individual checks.
 
 ## Typical use cases
 

@@ -108,6 +108,7 @@ observed state, so passing states are also benchmark-checkable:
 - `nav2.missing_cmd_vel`, `nav2.missing_global_plan`, `nav2.missing_navigate_to_pose`
 - `gnss.missing`, `imu.missing`, `gnss.hdop.high`
 - `custom.<domain_id>.evaluated`
+- `custom.<domain_id>.<label_token>.{pass,fail,skipped}` — one per custom check
 - `workflow.<topic_token>.{action_failures,result_failures,missing_service_responses}`
 
 Use these ids in benchmark manifests via [`expected_findings`](benchmark.md#expected-findings).

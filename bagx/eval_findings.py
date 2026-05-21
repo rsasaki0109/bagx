@@ -462,7 +462,56 @@ def _generate_custom_domain_findings(custom_domains: list["CustomDomainResult"])
                 confidence="high",
             )
         )
+        findings.extend(_generate_custom_check_findings(domain, domain_id))
     return findings
+
+
+def _generate_custom_check_findings(
+    domain: "CustomDomainResult", domain_id: str
+) -> list[Finding]:
+    """Emit one Finding per check, with stable per-check ids."""
+    findings: list[Finding] = []
+    for check in getattr(domain, "checks", []):
+        label_token = clean_topic_token(check.label) or "check"
+        if check.status == "pass":
+            state = "pass"
+            severity = "info"
+            title = f"{domain.name}: {check.label} passes custom rule"
+            action = None
+        elif check.status == "skipped":
+            state = "skipped"
+            severity = check.severity if check.severity != "info" else "warning"
+            title = f"{domain.name}: {check.label} could not be evaluated"
+            action = "Inspect input topics and sample counts for this custom check."
+        else:
+            state = "fail"
+            severity = check.severity
+            title = f"{domain.name}: {check.label} fails custom rule"
+            action = "Review the failing custom rule expectation."
+        findings.append(
+            Finding(
+                id=finding_id("custom", domain_id, label_token, state),
+                title=title,
+                severity=severity,
+                category="custom_rules",
+                domain=domain_id,
+                affected_topics=list(check.matched_topics),
+                evidence=[_check_evidence(item) for item in check.evidence],
+                suggested_action=action,
+                confidence="high",
+            )
+        )
+    return findings
+
+
+def _check_evidence(item: dict) -> Evidence:
+    return Evidence(
+        metric=str(item.get("metric", "")),
+        observed=item.get("observed"),
+        expected=item.get("expected"),
+        unit=item.get("unit"),
+        topic=item.get("topic"),
+    )
 
 
 def _generate_workflow_findings(metrics: list["WorkflowMetrics"]) -> list[Finding]:
