@@ -20,7 +20,7 @@ from rich.table import Table
 from bagx.custom_rules import CustomDomainResult, evaluate_custom_rule_set, load_custom_rule_set
 from bagx.contracts import report_metadata
 from bagx.eval_findings import generate_findings
-from bagx.findings import Finding
+from bagx.findings import Finding, severity_at_least
 from bagx.reader import BagReader, Message
 from bagx.topic_filters import is_sync_candidate
 
@@ -596,10 +596,26 @@ def _evaluate_sync(
     return metrics
 
 
-def print_eval_report(report: EvalReport, console: Console | None = None) -> None:
-    """Pretty-print an evaluation report."""
+def print_eval_report(
+    report: EvalReport,
+    console: Console | None = None,
+    *,
+    findings_only: bool = False,
+    severity_min: str | None = None,
+) -> None:
+    """Pretty-print an evaluation report.
+
+    findings_only: when True, suppress sensor tables and recommendations and
+    render the structured findings list instead.
+    severity_min: when set, filter findings to this severity or higher (only
+    affects the findings_only rendering).
+    """
     if console is None:
         console = Console()
+
+    if findings_only:
+        _print_findings_only(report, console, severity_min=severity_min)
+        return
 
     from pathlib import Path as _Path
 
@@ -749,6 +765,63 @@ def print_eval_report(report: EvalReport, console: Console | None = None) -> Non
         for rec in recs:
             console.print(f"  {rec}")
     console.print()
+
+
+_SEVERITY_STYLE = {
+    "info": "green",
+    "warning": "yellow",
+    "error": "red",
+    "critical": "bold red",
+}
+
+
+def _print_findings_only(
+    report: EvalReport,
+    console: Console,
+    *,
+    severity_min: str | None = None,
+) -> None:
+    """Render the structured findings list as text, optionally severity-filtered."""
+    from pathlib import Path as _Path
+
+    findings = report.findings or generate_findings(
+        report, detect_domain_names(report.topic_info, report.custom_domains)
+    )
+    if severity_min:
+        findings = [f for f in findings if severity_at_least(f.severity, severity_min)]
+
+    bag_name = _Path(report.bag_path).name or _Path(report.bag_path).stem
+    console.print(f"\n[bold]Findings: [cyan]{bag_name}[/cyan][/bold]")
+
+    if not findings:
+        suffix = f" (severity >= {severity_min})" if severity_min else ""
+        console.print(f"[dim]No findings{suffix}.[/dim]\n")
+        return
+
+    findings_sorted = sorted(
+        findings,
+        key=lambda f: (-_severity_rank(f.severity), f.category, f.id),
+    )
+    for finding in findings_sorted:
+        style = _SEVERITY_STYLE.get(finding.severity, "white")
+        console.print(
+            f"  [{style}]{finding.severity.upper():<8}[/{style}] "
+            f"[bold]{finding.id}[/bold] — {finding.title}"
+        )
+        if finding.affected_topics:
+            console.print(f"    [dim]topics:[/dim] {', '.join(finding.affected_topics)}")
+        for ev in finding.evidence:
+            unit = f" {ev.unit}" if ev.unit else ""
+            expected = f" (expected {ev.expected})" if ev.expected is not None else ""
+            console.print(f"    [dim]{ev.metric}:[/dim] {ev.observed}{unit}{expected}")
+        if finding.suggested_action:
+            console.print(f"    [dim]action:[/dim] {finding.suggested_action}")
+    console.print()
+
+
+def _severity_rank(severity: str) -> int:
+    from bagx.findings import SEVERITY_ORDER
+    return SEVERITY_ORDER.get(severity, -1)
 
 
 def _strip_rich_markup(text: str) -> str:

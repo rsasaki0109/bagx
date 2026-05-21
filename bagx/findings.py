@@ -13,6 +13,15 @@ import numpy as np
 Severity = Literal["info", "warning", "error", "critical"]
 Confidence = Literal["low", "medium", "high"]
 
+SEVERITY_ORDER: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}
+
+
+def severity_at_least(severity: str, minimum: str) -> bool:
+    """Return True when severity is at or above the minimum threshold."""
+    if minimum not in SEVERITY_ORDER:
+        raise ValueError(f"Unknown severity: {minimum!r}")
+    return SEVERITY_ORDER.get(severity, -1) >= SEVERITY_ORDER[minimum]
+
 
 @dataclass
 class Evidence:

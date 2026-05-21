@@ -109,6 +109,64 @@ class TestCliEval:
         assert "WarehouseBot custom rules matched" in result.output
         assert "/warehouse_bot/mission/result" in result.output
 
+    def test_eval_findings_only(self, nav2_bag: Path):
+        result = runner.invoke(app, ["eval", str(nav2_bag), "--findings-only"])
+        assert result.exit_code == 0
+        assert "Findings:" in result.output
+        assert "nav2.detected" in result.output
+        # findings-only suppresses the sensor tables and recommendations section
+        assert "Recommendations:" not in result.output
+        assert "Overall Score" not in result.output
+
+    def test_eval_severity_min_filters_text(self, multi_bag: Path):
+        # Default findings_only output contains both info and warning findings.
+        baseline = runner.invoke(app, ["eval", str(multi_bag), "--findings-only"])
+        assert baseline.exit_code == 0
+        assert "INFO" in baseline.output
+        assert "WARNING" in baseline.output
+
+        filtered = runner.invoke(
+            app,
+            ["eval", str(multi_bag), "--findings-only", "--severity-min", "warning"],
+        )
+        assert filtered.exit_code == 0
+        assert "WARNING" in filtered.output
+        assert "INFO" not in filtered.output
+
+    def test_eval_severity_min_filters_json(self, multi_bag: Path, tmp_path: Path):
+        json_path = tmp_path / "eval.json"
+        result = runner.invoke(
+            app,
+            [
+                "eval",
+                str(multi_bag),
+                "--json",
+                str(json_path),
+                "--severity-min",
+                "warning",
+            ],
+        )
+        assert result.exit_code == 0
+        with open(json_path) as f:
+            data = json.load(f)
+        assert data["findings"], "expected at least one warning-or-higher finding"
+        for finding in data["findings"]:
+            assert finding["severity"] in {"warning", "error", "critical"}
+
+    def test_eval_severity_min_invalid(self, gnss_bag: Path):
+        result = runner.invoke(app, ["eval", str(gnss_bag), "--severity-min", "loud"])
+        assert result.exit_code == 2
+        assert "--severity-min" in result.output
+
+    def test_eval_findings_only_empty(self, gnss_bag: Path):
+        # gnss_bag is healthy, so warning+ filter should yield no findings
+        result = runner.invoke(
+            app,
+            ["eval", str(gnss_bag), "--findings-only", "--severity-min", "error"],
+        )
+        assert result.exit_code == 0
+        assert "No findings" in result.output
+
 
 class TestCliCompare:
     def test_compare(self, gnss_bag: Path, gnss_bag_degraded: Path):

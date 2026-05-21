@@ -159,6 +159,12 @@ def eval(
     rules_path: Optional[str] = typer.Option(
         None, "--rules", help="Optional custom rule file or plugin name for custom topic/message conventions"
     ),
+    findings_only: bool = typer.Option(
+        False, "--findings-only", help="Show only the structured findings list, suppressing sensor tables and recommendations"
+    ),
+    severity_min: Optional[str] = typer.Option(
+        None, "--severity-min", help="Filter findings to this severity or higher: info, warning, error, critical"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -166,13 +172,30 @@ def eval(
     producing a composite quality score.
     """
     from bagx.eval import evaluate_bag, print_eval_report
+    from bagx.findings import SEVERITY_ORDER, severity_at_least
+
+    if severity_min is not None and severity_min not in SEVERITY_ORDER:
+        console.print(
+            f"[red]Error: --severity-min must be one of {list(SEVERITY_ORDER)}, got {severity_min!r}[/red]"
+        )
+        raise typer.Exit(2)
 
     try:
         report = evaluate_bag(bag, custom_rules_path=rules_path)
-        print_eval_report(report, console)
+        print_eval_report(
+            report,
+            console,
+            findings_only=findings_only,
+            severity_min=severity_min,
+        )
         if json_output:
+            data = report.to_dict()
+            if severity_min:
+                data["findings"] = [
+                    f for f in data["findings"] if severity_at_least(f["severity"], severity_min)
+                ]
             with open(json_output, "w") as f:
-                json.dump(report.to_dict(), f, indent=2)
+                json.dump(data, f, indent=2)
             console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")

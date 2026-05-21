@@ -8,7 +8,18 @@ Evaluate a single bag and produce a composite quality score (0–100).
 bagx eval recording.db3
 bagx eval recording.db3 --json report.json
 bagx eval recording.db3 --rules warehouse_bot
+bagx eval recording.db3 --findings-only
+bagx eval recording.db3 --severity-min warning
+bagx eval recording.db3 --findings-only --severity-min error
 ```
+
+### Output filtering
+
+- `--findings-only` skips the sensor-quality tables and recommendations and
+  prints the [structured findings list](#structured-findings) instead.
+- `--severity-min {info|warning|error|critical}` filters the findings list to
+  that severity or higher. Applied to both the `--findings-only` text view and
+  the `--json` payload.
 
 ## What it measures
 
