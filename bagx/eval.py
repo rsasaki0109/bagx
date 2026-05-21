@@ -167,8 +167,16 @@ def evaluate_bag(
     output_json: TextIO | None = None,
     config: EvalConfig | None = None,
     custom_rules_path: str | None = None,
+    include_anomaly: bool = False,
 ) -> EvalReport:
-    """Run full quality evaluation on a bag file."""
+    """Run full quality evaluation on a bag file.
+
+    When ``include_anomaly`` is True, anomaly detection runs alongside the
+    quality eval and its temporal findings (fix-lost segments, IMU spike
+    clusters, rate gaps) are merged into ``report.findings``. This is the
+    surface CI gates with ``bagx diff`` and ``bagx benchmark`` use to reason
+    about segment-level readiness.
+    """
     if config is None:
         config = EvalConfig()
 
@@ -297,6 +305,16 @@ def evaluate_bag(
 
     report.overall_score = float(np.mean(scores)) if scores else 0.0
     report.findings = generate_findings(report, domains)
+
+    if include_anomaly:
+        # Local import avoids a circular dependency: anomaly imports from eval
+        # contracts that aren't ready at module load time.
+        from bagx.anomaly import detect_anomalies
+        try:
+            anomaly_report = detect_anomalies(bag_path)
+            report.findings.extend(anomaly_report.findings)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Anomaly detection failed during eval: %s", exc)
 
     if output_json:
         json.dump(report.to_dict(), output_json, indent=2)

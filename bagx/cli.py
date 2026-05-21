@@ -181,6 +181,9 @@ def eval(
     severity_min: Optional[str] = typer.Option(
         None, "--severity-min", help="Filter findings to this severity or higher: info, warning, error, critical"
     ),
+    include_anomaly: bool = typer.Option(
+        False, "--include-anomaly", help="Also run anomaly detection and merge its temporal findings (fix-lost segments, spike clusters, rate gaps) into the report"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -197,7 +200,11 @@ def eval(
         raise typer.Exit(2)
 
     try:
-        report = evaluate_bag(bag, custom_rules_path=rules_path)
+        report = evaluate_bag(
+            bag,
+            custom_rules_path=rules_path,
+            include_anomaly=include_anomaly,
+        )
         print_eval_report(
             report,
             console,

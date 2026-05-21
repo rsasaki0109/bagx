@@ -493,6 +493,40 @@ class TestEvalConfig:
         assert report.gnss.score >= default_report.gnss.score
 
 
+class TestEvalIncludeAnomaly:
+    """Phase E: evaluate_bag --include-anomaly merges anomaly temporal findings."""
+
+    def test_default_omits_anomaly_findings(self, gnss_bag: Path):
+        """Without the flag, eval emits no anomaly.* findings."""
+        report = evaluate_bag(str(gnss_bag))
+        anomaly_findings = [f for f in report.findings if f.id.startswith("anomaly.")]
+        assert anomaly_findings == []
+
+    def test_include_anomaly_emits_temporal_findings(self, gnss_bag: Path):
+        """gnss_bag has a fix_drop; --include-anomaly should surface fix_lost."""
+        report = evaluate_bag(str(gnss_bag), include_anomaly=True)
+        fix_lost = [f for f in report.findings if "fix_lost" in f.id]
+        assert fix_lost, "expected anomaly.gnss.fix_lost in --include-anomaly report"
+        assert fix_lost[0].time_range is not None
+        assert fix_lost[0].time_range.duration_sec >= 0
+
+    def test_include_anomaly_serializes_into_json(self, gnss_bag: Path):
+        """Temporal findings must appear in to_dict() output for CI tooling."""
+        report = evaluate_bag(str(gnss_bag), include_anomaly=True)
+        data = report.to_dict()
+        anomaly_findings = [f for f in data["findings"] if f["id"].startswith("anomaly.")]
+        assert anomaly_findings
+        first = anomaly_findings[0]
+        assert "time_range" in first
+        assert data["schema_version"] == "1.3.0"
+
+    def test_include_anomaly_does_not_change_quality_score(self, gnss_bag: Path):
+        """Anomaly findings are additive — the overall_score logic is unchanged."""
+        baseline = evaluate_bag(str(gnss_bag))
+        with_anomaly = evaluate_bag(str(gnss_bag), include_anomaly=True)
+        assert baseline.overall_score == pytest.approx(with_anomaly.overall_score)
+
+
 def _assert_no_nan(obj):
     if isinstance(obj, dict):
         for v in obj.values():

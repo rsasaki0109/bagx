@@ -167,6 +167,31 @@ class TestCliEval:
         assert result.exit_code == 0
         assert "No findings" in result.output
 
+    def test_eval_include_anomaly_flag(self, gnss_bag: Path, tmp_path: Path):
+        """--include-anomaly should merge temporal findings into JSON output."""
+        import json
+        json_path = tmp_path / "eval.json"
+        result = runner.invoke(
+            app,
+            ["eval", str(gnss_bag), "--include-anomaly", "--json", str(json_path)],
+        )
+        assert result.exit_code == 0, result.output
+        with json_path.open() as f:
+            data = json.load(f)
+        anomaly_findings = [f for f in data["findings"] if f["id"].startswith("anomaly.")]
+        assert anomaly_findings, "expected anomaly findings in --include-anomaly JSON"
+
+    def test_eval_without_include_anomaly_omits_temporal(self, gnss_bag: Path, tmp_path: Path):
+        """Default behavior remains unchanged — no anomaly findings."""
+        import json
+        json_path = tmp_path / "eval.json"
+        result = runner.invoke(app, ["eval", str(gnss_bag), "--json", str(json_path)])
+        assert result.exit_code == 0
+        with json_path.open() as f:
+            data = json.load(f)
+        anomaly_findings = [f for f in data["findings"] if f["id"].startswith("anomaly.")]
+        assert anomaly_findings == []
+
 
 class TestCliCompare:
     def test_compare(self, gnss_bag: Path, gnss_bag_degraded: Path):
