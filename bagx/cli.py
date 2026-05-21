@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from typing import Optional
 
 import typer
@@ -217,6 +218,74 @@ def eval(
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error evaluating bag: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def diff(
+    baseline: str = typer.Argument(..., help="Path to baseline bagx eval JSON report"),
+    current: str = typer.Argument(..., help="Path to current bagx eval JSON report"),
+    format: str = typer.Option(
+        "text", "--format", help="Output format: text, json, markdown"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Write output to a file instead of stdout"
+    ),
+    include_same: bool = typer.Option(
+        False, "--include-same", help="Include findings whose severity is unchanged"
+    ),
+    exit_on: Optional[str] = typer.Option(
+        None,
+        "--exit-on",
+        help="Exit non-zero when a regression at this severity or higher is detected (info, warning, error, critical)",
+    ),
+) -> None:
+    """Diff two bagx eval JSON reports by finding id."""
+    from bagx.diff import (
+        print_diff_markdown,
+        print_diff_text,
+        run_diff,
+        write_diff_json,
+    )
+    from bagx.findings import SEVERITY_ORDER
+
+    if format not in {"text", "json", "markdown"}:
+        console.print(f"[red]Error: --format must be one of text, json, markdown (got {format!r})[/red]")
+        raise typer.Exit(2)
+    if exit_on is not None and exit_on not in SEVERITY_ORDER:
+        console.print(
+            f"[red]Error: --exit-on must be one of {list(SEVERITY_ORDER)}, got {exit_on!r}[/red]"
+        )
+        raise typer.Exit(2)
+
+    try:
+        diff_result = run_diff(baseline, current, include_same=include_same)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if format == "json":
+        if output:
+            with open(output, "w") as f:
+                write_diff_json(diff_result, f)
+            console.print(f"Diff JSON saved to: [cyan]{output}[/cyan]")
+        else:
+            write_diff_json(diff_result, sys.stdout)
+            sys.stdout.write("\n")
+    elif format == "markdown":
+        if output:
+            with open(output, "w") as f:
+                print_diff_markdown(diff_result, f)
+            console.print(f"Diff markdown saved to: [cyan]{output}[/cyan]")
+        else:
+            print_diff_markdown(diff_result, sys.stdout)
+    else:
+        target_console = Console(file=open(output, "w")) if output else console
+        print_diff_text(diff_result, target_console)
+        if output:
+            console.print(f"Diff text saved to: [cyan]{output}[/cyan]")
+
+    if exit_on and diff_result.has_regression(exit_on):
         raise typer.Exit(1)
 
 

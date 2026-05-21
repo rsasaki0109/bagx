@@ -61,6 +61,7 @@ nav:
       - scene — 3D State: guide/scene.md
       - batch — Batch Processing: guide/batch.md
       - benchmark — Benchmark Suites: guide/benchmark.md
+      - diff — Compare Eval Reports: guide/diff.md
   - API Reference:
       - reader: api/reader.md
       - eval: api/eval.md
