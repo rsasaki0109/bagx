@@ -43,7 +43,13 @@ class EvidenceDrift:
 
 @dataclass
 class FindingChange:
-    """One entry in a findings diff."""
+    """One entry in a findings diff.
+
+    For temporal findings (with time_range), distinct segments of the same
+    finding id appear as separate FindingChange entries. The
+    baseline_time_range / current_time_range fields record which segment
+    each side of the change refers to.
+    """
 
     id: str
     kind: ChangeKind
@@ -54,6 +60,8 @@ class FindingChange:
     domain: str | None = None
     affected_topics: list[str] = field(default_factory=list)
     evidence_drift: list[EvidenceDrift] = field(default_factory=list)
+    baseline_time_range: dict[str, int] | None = None
+    current_time_range: dict[str, int] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -119,31 +127,126 @@ def compare_findings(
     *,
     include_same: bool = False,
 ) -> FindingsDiff:
-    """Compute a FindingsDiff from two finding lists."""
-    baseline_by_id = {str(f.get("id", "")): f for f in baseline_findings if f.get("id")}
-    current_by_id = {str(f.get("id", "")): f for f in current_findings if f.get("id")}
+    """Compute a FindingsDiff from two finding lists.
+
+    Findings are joined by id. Within an id, findings with a ``time_range``
+    are matched segment-by-segment: overlapping ranges count as the same
+    segment (so a slightly-shifted ``fix_lost`` segment compares cleanly),
+    non-overlapping ranges count as different segments (so a new failure
+    window shows up as a separate change).
+    """
+    baseline_by_id: dict[str, list[dict[str, Any]]] = {}
+    for f in baseline_findings:
+        fid = str(f.get("id", ""))
+        if fid:
+            baseline_by_id.setdefault(fid, []).append(f)
+    current_by_id: dict[str, list[dict[str, Any]]] = {}
+    for f in current_findings:
+        fid = str(f.get("id", ""))
+        if fid:
+            current_by_id.setdefault(fid, []).append(f)
+
     all_ids = sorted(set(baseline_by_id) | set(current_by_id))
 
     changes: list[FindingChange] = []
     for fid in all_ids:
-        b = baseline_by_id.get(fid)
-        c = current_by_id.get(fid)
-        if b is None and c is not None:
-            changes.append(_new_change(fid, c))
-        elif c is None and b is not None:
-            changes.append(_gone_change(fid, b))
-        elif b is not None and c is not None:
-            change = _compare_existing(fid, b, c)
+        b_list = baseline_by_id.get(fid, [])
+        c_list = current_by_id.get(fid, [])
+        for change in _match_segments(fid, b_list, c_list):
             if change.kind == "same" and not include_same:
                 continue
             changes.append(change)
 
-    changes.sort(key=lambda c: (-_KIND_RANK.get(c.kind, 0), c.id))
+    changes.sort(key=lambda c: (
+        -_KIND_RANK.get(c.kind, 0),
+        c.id,
+        (c.current_time_range or c.baseline_time_range or {}).get("start_ns", 0),
+    ))
     return FindingsDiff(
         baseline_path=baseline_path,
         current_path=current_path,
         changes=changes,
     )
+
+
+def _match_segments(
+    fid: str,
+    baseline: list[dict[str, Any]],
+    current: list[dict[str, Any]],
+) -> list[FindingChange]:
+    """Pair baseline/current findings of the same id by time_range overlap.
+
+    Bag-global findings (time_range is None or absent) are matched
+    positionally, preserving the single-instance behavior of pre-v0.4
+    reports. Findings with explicit time_range are matched greedily by
+    overlap; unmatched entries become new/gone changes.
+    """
+    b_global = [f for f in baseline if not _has_time_range(f)]
+    c_global = [f for f in current if not _has_time_range(f)]
+    b_temporal = [f for f in baseline if _has_time_range(f)]
+    c_temporal = [f for f in current if _has_time_range(f)]
+
+    changes: list[FindingChange] = []
+
+    # Bag-global findings: pair positionally (typically one of each).
+    for i in range(max(len(b_global), len(c_global))):
+        b = b_global[i] if i < len(b_global) else None
+        c = c_global[i] if i < len(c_global) else None
+        changes.append(_pair_to_change(fid, b, c))
+
+    # Temporal findings: greedy overlap matching.
+    matched_current: set[int] = set()
+    for b in b_temporal:
+        b_tr = b.get("time_range") or {}
+        match_idx: int | None = None
+        for j, c in enumerate(c_temporal):
+            if j in matched_current:
+                continue
+            c_tr = c.get("time_range") or {}
+            if _ranges_overlap(b_tr, c_tr):
+                match_idx = j
+                break
+        if match_idx is not None:
+            matched_current.add(match_idx)
+            changes.append(_pair_to_change(fid, b, c_temporal[match_idx]))
+        else:
+            changes.append(_pair_to_change(fid, b, None))
+
+    for j, c in enumerate(c_temporal):
+        if j in matched_current:
+            continue
+        changes.append(_pair_to_change(fid, None, c))
+
+    return changes
+
+
+def _pair_to_change(
+    fid: str,
+    baseline: dict[str, Any] | None,
+    current: dict[str, Any] | None,
+) -> FindingChange:
+    if baseline is None and current is not None:
+        return _new_change(fid, current)
+    if current is None and baseline is not None:
+        return _gone_change(fid, baseline)
+    assert baseline is not None and current is not None
+    return _compare_existing(fid, baseline, current)
+
+
+def _has_time_range(finding: dict[str, Any]) -> bool:
+    tr = finding.get("time_range")
+    return isinstance(tr, dict) and "start_ns" in tr and "end_ns" in tr
+
+
+def _ranges_overlap(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    try:
+        a_start = int(a["start_ns"])
+        a_end = int(a["end_ns"])
+        b_start = int(b["start_ns"])
+        b_end = int(b["end_ns"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return a_start <= b_end and b_start <= a_end
 
 
 def _new_change(fid: str, current: dict[str, Any]) -> FindingChange:
@@ -155,6 +258,7 @@ def _new_change(fid: str, current: dict[str, Any]) -> FindingChange:
         category=current.get("category"),
         domain=current.get("domain"),
         affected_topics=list(current.get("affected_topics", []) or []),
+        current_time_range=current.get("time_range") if _has_time_range(current) else None,
     )
 
 
@@ -167,6 +271,7 @@ def _gone_change(fid: str, baseline: dict[str, Any]) -> FindingChange:
         category=baseline.get("category"),
         domain=baseline.get("domain"),
         affected_topics=list(baseline.get("affected_topics", []) or []),
+        baseline_time_range=baseline.get("time_range") if _has_time_range(baseline) else None,
     )
 
 
@@ -199,6 +304,8 @@ def _compare_existing(
         domain=current.get("domain") or baseline.get("domain"),
         affected_topics=list(current.get("affected_topics", []) or baseline.get("affected_topics", []) or []),
         evidence_drift=drift,
+        baseline_time_range=baseline.get("time_range") if _has_time_range(baseline) else None,
+        current_time_range=current.get("time_range") if _has_time_range(current) else None,
     )
 
 
@@ -278,6 +385,9 @@ def print_diff_text(diff: FindingsDiff, console: Console | None = None) -> None:
             f"  [{style}]{glyph} {change.kind.upper():<6}[/{style}] {sev} "
             f"[bold]{change.id}[/bold] — {change.title or ''}"
         )
+        span = _format_time_range(change)
+        if span:
+            console.print(f"    [dim]segment:[/dim] {span}")
         if change.affected_topics:
             console.print(f"    [dim]topics:[/dim] {', '.join(change.affected_topics)}")
         for drift in change.evidence_drift:
@@ -306,12 +416,24 @@ def print_diff_markdown(diff: FindingsDiff, stream: Any) -> None:
         write("_No differences._\n")
         return
 
-    write("| kind | id | severity | title |\n")
-    write("| ---- | -- | -------- | ----- |\n")
-    for change in diff.changes:
-        sev = _format_severity_transition(change, plain=True)
-        title = (change.title or "").replace("|", "\\|")
-        write(f"| {change.kind} | `{change.id}` | {sev} | {title} |\n")
+    has_temporal = any(
+        c.baseline_time_range or c.current_time_range for c in diff.changes
+    )
+    if has_temporal:
+        write("| kind | id | severity | segment | title |\n")
+        write("| ---- | -- | -------- | ------- | ----- |\n")
+        for change in diff.changes:
+            sev = _format_severity_transition(change, plain=True)
+            title = (change.title or "").replace("|", "\\|")
+            span = _format_time_range(change) or "—"
+            write(f"| {change.kind} | `{change.id}` | {sev} | {span} | {title} |\n")
+    else:
+        write("| kind | id | severity | title |\n")
+        write("| ---- | -- | -------- | ----- |\n")
+        for change in diff.changes:
+            sev = _format_severity_transition(change, plain=True)
+            title = (change.title or "").replace("|", "\\|")
+            write(f"| {change.kind} | `{change.id}` | {sev} | {title} |\n")
     write("\n")
 
 
@@ -329,6 +451,38 @@ def _format_severity_transition(change: FindingChange, *, plain: bool = False) -
         return change.current_severity or ""
     arrow = "->" if plain else "→"
     return f"{change.baseline_severity} {arrow} {change.current_severity}"
+
+
+def _format_time_range(change: FindingChange) -> str:
+    """Render time_range info as a compact human-readable span."""
+    b = change.baseline_time_range
+    c = change.current_time_range
+    if not b and not c:
+        return ""
+    if change.kind == "new" and c:
+        return _format_one_range(c)
+    if change.kind == "gone" and b:
+        return _format_one_range(b)
+    if b == c and c:
+        return _format_one_range(c)
+    if b and c:
+        return f"{_format_one_range(b)} → {_format_one_range(c)}"
+    if c:
+        return _format_one_range(c)
+    if b:
+        return _format_one_range(b)
+    return ""
+
+
+def _format_one_range(tr: dict[str, Any]) -> str:
+    try:
+        start = int(tr["start_ns"]) / 1e9
+        end = int(tr["end_ns"]) / 1e9
+    except (KeyError, TypeError, ValueError):
+        return "?"
+    if abs(end - start) < 1e-6:
+        return f"t={start:.1f}s"
+    return f"t={start:.1f}-{end:.1f}s"
 
 
 def run_diff(

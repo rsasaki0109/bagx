@@ -267,3 +267,121 @@ class TestDiffCli:
     def test_diff_cli_missing_file(self, tmp_path: Path):
         result = runner.invoke(app, ["diff", "/nonexistent.json", "/also-nonexistent.json"])
         assert result.exit_code == 1
+
+
+def _make_temporal_finding(
+    fid: str,
+    severity: str,
+    start_ns: int,
+    end_ns: int,
+    *,
+    title: str | None = None,
+) -> dict:
+    base = _make_finding(fid, severity, title=title)
+    base["time_range"] = {"start_ns": start_ns, "end_ns": end_ns}
+    return base
+
+
+class TestSegmentAwareDiff:
+    """Phase C: time_range overlap drives segment matching."""
+
+    def test_overlapping_ranges_match_as_same_segment(self):
+        # baseline 10-20s, current 12-22s → overlap, same segment
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 12_000_000_000, 22_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c], include_same=True)
+        assert len(diff.changes) == 1
+        assert diff.changes[0].kind == "same"
+        assert diff.changes[0].baseline_time_range == {"start_ns": 10_000_000_000, "end_ns": 20_000_000_000}
+        assert diff.changes[0].current_time_range == {"start_ns": 12_000_000_000, "end_ns": 22_000_000_000}
+
+    def test_disjoint_ranges_become_separate_changes(self):
+        # baseline at 10-20s, current at 50-60s → no overlap, both reported
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 50_000_000_000, 60_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        kinds = sorted(ch.kind for ch in diff.changes)
+        assert kinds == ["gone", "new"]
+        gone = next(ch for ch in diff.changes if ch.kind == "gone")
+        new = next(ch for ch in diff.changes if ch.kind == "new")
+        assert gone.baseline_time_range == {"start_ns": 10_000_000_000, "end_ns": 20_000_000_000}
+        assert new.current_time_range == {"start_ns": 50_000_000_000, "end_ns": 60_000_000_000}
+
+    def test_multiple_overlapping_segments_match_greedily(self):
+        # Two baseline segments overlap two current segments respectively
+        b1 = _make_temporal_finding("anomaly.imu.accel_spike.imu", "warning", 10_000_000_000, 15_000_000_000)
+        b2 = _make_temporal_finding("anomaly.imu.accel_spike.imu", "warning", 100_000_000_000, 110_000_000_000)
+        c1 = _make_temporal_finding("anomaly.imu.accel_spike.imu", "error", 12_000_000_000, 14_000_000_000)
+        c2 = _make_temporal_finding("anomaly.imu.accel_spike.imu", "warning", 105_000_000_000, 115_000_000_000)
+        diff = compare_findings("/b.json", [b1, b2], "/c.json", [c1, c2], include_same=True)
+        # Two paired changes; the first should be "worse" (severity up), second "same"
+        kinds = [ch.kind for ch in diff.changes]
+        assert kinds.count("worse") == 1
+        assert kinds.count("same") == 1
+        worse = next(ch for ch in diff.changes if ch.kind == "worse")
+        assert worse.baseline_time_range["start_ns"] == 10_000_000_000
+
+    def test_temporal_severity_change_is_worse(self):
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "error", 11_000_000_000, 21_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        assert len(diff.changes) == 1
+        assert diff.changes[0].kind == "worse"
+        assert diff.changes[0].baseline_severity == "warning"
+        assert diff.changes[0].current_severity == "error"
+
+    def test_baseline_global_does_not_match_current_temporal(self):
+        # Same id, baseline is bag-global, current is temporal → different things
+        b = _make_finding("anomaly.gnss.fix_lost.gnss", "warning")
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        # The global one disappears, the temporal one appears
+        kinds = sorted(ch.kind for ch in diff.changes)
+        assert kinds == ["gone", "new"]
+
+    def test_global_findings_still_join_by_id(self):
+        """Pre-v0.4 (no time_range) findings continue to join by id alone."""
+        b = _make_finding("nav2.detected", "info")
+        c = _make_finding("nav2.detected", "info")
+        diff = compare_findings("/b.json", [b], "/c.json", [c], include_same=True)
+        assert len(diff.changes) == 1
+        assert diff.changes[0].kind == "same"
+        assert diff.changes[0].baseline_time_range is None
+        assert diff.changes[0].current_time_range is None
+
+    def test_to_dict_includes_time_range_fields(self):
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10, 20)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "error", 12, 22)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        d = diff.to_dict()
+        change = d["changes"][0]
+        assert change["baseline_time_range"] == {"start_ns": 10, "end_ns": 20}
+        assert change["current_time_range"] == {"start_ns": 12, "end_ns": 22}
+
+    def test_markdown_includes_segment_column_when_temporal(self):
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "error", 12_000_000_000, 22_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        stream = io.StringIO()
+        print_diff_markdown(diff, stream)
+        out = stream.getvalue()
+        assert "segment" in out
+        assert "t=12.0-22.0s" in out
+
+    def test_text_rendering_shows_segment(self):
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "error", 12_000_000_000, 22_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        from rich.console import Console
+        console = Console(file=io.StringIO(), force_terminal=False)
+        print_diff_text(diff, console)
+        out = console.file.getvalue()
+        assert "segment" in out
+        assert "t=10.0-20.0s" in out and "t=12.0-22.0s" in out
+
+    def test_regression_detection_works_for_temporal_findings(self):
+        b = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "warning", 10_000_000_000, 20_000_000_000)
+        c = _make_temporal_finding("anomaly.gnss.fix_lost.gnss", "error", 12_000_000_000, 22_000_000_000)
+        diff = compare_findings("/b.json", [b], "/c.json", [c])
+        assert diff.has_regression("warning")
+        assert diff.has_regression("error")
