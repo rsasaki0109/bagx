@@ -64,3 +64,8 @@ bagx diff baseline.json current.json --format markdown --output diff.md --exit-o
 
 Post `diff.md` as a PR comment, and let `--exit-on warning` block the merge
 when readiness regresses.
+
+A ready-to-use GitHub Actions workflow lives at
+[`examples/github_actions/bagx-pr-check.yml`](https://github.com/rsasaki0109/bagx/blob/main/examples/github_actions/bagx-pr-check.yml).
+It evaluates the PR bag, restores the previous baseline from cache, runs
+`bagx diff`, and posts the markdown result as a sticky PR comment.

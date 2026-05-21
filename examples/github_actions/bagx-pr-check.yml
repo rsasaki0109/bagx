@@ -1,0 +1,94 @@
+# bagx PR readiness check
+#
+# Drop this file into .github/workflows/ to gate pull requests on bag
+# readiness regressions. The workflow:
+#   1. Evaluates a target bag on the PR branch with `bagx eval`.
+#   2. Restores the previous eval JSON from cache (keyed on main SHA).
+#   3. Compares the two reports with `bagx diff` and posts the markdown
+#      result back to the PR as a comment.
+#   4. Fails the check when --exit-on warning fires.
+#
+# Configuration:
+#   - BAG_PATH: path or URL of the bag to evaluate. Replace the curl
+#     placeholder with however you fetch the bag in your repo.
+#   - SEVERITY_FLOOR: severity used for both `bagx eval --severity-min`
+#     (terminal log) and `bagx diff --exit-on` (CI gate). Tune per repo.
+#
+# This file lives at examples/github_actions/bagx-pr-check.yml in the
+# bagx repo; copy it to your own .github/workflows/ to enable.
+
+name: bagx PR readiness
+
+on:
+  pull_request:
+    paths:
+      - "**/*.db3"
+      - "**/*.mcap"
+      - ".github/workflows/bagx-pr-check.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  BAG_PATH: bag/recording.db3
+  SEVERITY_FLOOR: warning
+
+jobs:
+  bagx-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bagx
+        run: pip install "bagx>=0.3.0"
+
+      - name: Evaluate current PR bag
+        run: |
+          bagx eval "${BAG_PATH}" --json current.json
+          bagx eval "${BAG_PATH}" --findings-only --severity-min "${SEVERITY_FLOOR}"
+
+      - name: Restore baseline eval from main
+        id: baseline_cache
+        uses: actions/cache@v4
+        with:
+          path: baseline.json
+          # Use the merge-base SHA so the cache is shared across PRs targeting
+          # the same main commit. The cache must be primed by a separate
+          # workflow that runs `bagx eval` on push to main.
+          key: bagx-eval-baseline-${{ github.event.pull_request.base.sha }}
+
+      - name: Compare current PR against main baseline
+        id: diff
+        if: steps.baseline_cache.outputs.cache-hit == 'true'
+        run: |
+          bagx diff baseline.json current.json \
+            --format markdown \
+            --output diff.md \
+            --exit-on "${SEVERITY_FLOOR}"
+
+      - name: Skip diff when no baseline cache exists
+        if: steps.baseline_cache.outputs.cache-hit != 'true'
+        run: |
+          echo "No baseline.json cached for ${{ github.event.pull_request.base.sha }} — skipping diff."
+          echo "Prime the cache by running \`bagx eval --json baseline.json\` in a workflow on push to main." >> diff.md
+
+      - name: Comment diff on the PR
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: diff.md
+          header: bagx-readiness-diff
+
+      - name: Upload current eval as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bagx-eval-${{ github.event.pull_request.head.sha }}
+          path: current.json
