@@ -1,3 +1,3 @@
 """bagx - Post-processing analysis engine for ROS2 rosbag data."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0.dev0"

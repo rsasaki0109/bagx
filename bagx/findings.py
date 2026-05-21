@@ -23,6 +23,49 @@ def severity_at_least(severity: str, minimum: str) -> bool:
     return SEVERITY_ORDER.get(severity, -1) >= SEVERITY_ORDER[minimum]
 
 
+@dataclass(frozen=True)
+class TimeRange:
+    """Inclusive time interval in absolute ROS time (nanoseconds).
+
+    ``start_ns == end_ns`` represents a point event. Both endpoints are
+    expressed in absolute ROS time so reports remain meaningful when
+    compared across bag boundaries; relative-second views are a rendering
+    concern, not a storage one.
+    """
+
+    start_ns: int
+    end_ns: int
+
+    def __post_init__(self) -> None:
+        if self.start_ns < 0 or self.end_ns < 0:
+            raise ValueError(
+                f"TimeRange endpoints must be non-negative ns "
+                f"(got start={self.start_ns}, end={self.end_ns})"
+            )
+        if self.end_ns < self.start_ns:
+            raise ValueError(
+                f"TimeRange end_ns ({self.end_ns}) precedes start_ns ({self.start_ns})"
+            )
+
+    @property
+    def duration_ns(self) -> int:
+        return self.end_ns - self.start_ns
+
+    @property
+    def duration_sec(self) -> float:
+        return self.duration_ns / 1e9
+
+    def overlaps(self, other: "TimeRange") -> bool:
+        return self.start_ns <= other.end_ns and other.start_ns <= self.end_ns
+
+    def to_dict(self) -> dict[str, int]:
+        return {"start_ns": self.start_ns, "end_ns": self.end_ns}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TimeRange":
+        return cls(start_ns=int(data["start_ns"]), end_ns=int(data["end_ns"]))
+
+
 @dataclass
 class Evidence:
     """One measured or observed fact behind a finding."""
@@ -50,10 +93,12 @@ class Finding:
     evidence: list[Evidence] = field(default_factory=list)
     suggested_action: str | None = None
     confidence: Confidence = "medium"
+    time_range: TimeRange | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["evidence"] = [item.to_dict() for item in self.evidence]
+        data["time_range"] = self.time_range.to_dict() if self.time_range else None
         return _clean_nan(data)
 
 

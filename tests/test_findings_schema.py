@@ -84,3 +84,73 @@ def test_schema_file_parses_as_json():
     with findings_schema_path().open() as f:
         parsed = json.load(f)
     assert "$id" in parsed
+
+
+def test_schema_accepts_time_range_object():
+    schema = findings_schema()
+    finding = {
+        "id": "anomaly.gnss.fix_lost.gps",
+        "title": "GNSS fix lost",
+        "severity": "warning",
+        "category": "sensor_quality",
+        "time_range": {"start_ns": 1_000_000_000, "end_ns": 2_500_000_000},
+    }
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(finding))
+    assert not errors, [e.message for e in errors]
+
+
+def test_schema_accepts_time_range_null():
+    schema = findings_schema()
+    finding = {
+        "id": "nav2.detected",
+        "title": "Nav2 topics detected",
+        "severity": "info",
+        "category": "domain_detection",
+        "time_range": None,
+    }
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(finding))
+    assert not errors, [e.message for e in errors]
+
+
+def test_schema_accepts_finding_without_time_range_key():
+    """Pre-1.3.0 reports omit time_range entirely — must still validate."""
+    schema = findings_schema()
+    finding = {
+        "id": "nav2.detected",
+        "title": "Nav2 topics detected",
+        "severity": "info",
+        "category": "domain_detection",
+    }
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(finding))
+    assert not errors, [e.message for e in errors]
+
+
+def test_schema_rejects_time_range_with_negative_ns():
+    schema = findings_schema()
+    finding = {
+        "id": "test.x",
+        "title": "test",
+        "severity": "info",
+        "category": "test",
+        "time_range": {"start_ns": -1, "end_ns": 100},
+    }
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(finding))
+    assert errors, "schema should reject negative time_range endpoints"
+
+
+def test_schema_rejects_time_range_with_extra_fields():
+    schema = findings_schema()
+    finding = {
+        "id": "test.x",
+        "title": "test",
+        "severity": "info",
+        "category": "test",
+        "time_range": {"start_ns": 0, "end_ns": 100, "label": "stuff"},
+    }
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(finding))
+    assert errors, "schema should reject extra fields inside time_range"
