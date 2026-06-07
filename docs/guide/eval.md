@@ -12,6 +12,7 @@ bagx eval recording.db3 --findings-only
 bagx eval recording.db3 --severity-min warning
 bagx eval recording.db3 --findings-only --severity-min error
 bagx eval recording.db3 --include-anomaly       # also merge fix-lost / spike segments
+bagx eval recording.db3 --badge badge.json      # emit a shields.io readiness badge
 ```
 
 ### Output filtering
@@ -25,6 +26,28 @@ bagx eval recording.db3 --include-anomaly       # also merge fix-lost / spike se
   **temporal findings** (with `time_range`) into the report. Useful when the
   eval output is destined for `bagx diff` or `bagx benchmark` CI gates. Off
   by default because it re-reads the bag.
+
+### Readiness badge
+
+`--badge <file>` writes a [shields.io endpoint](https://shields.io/badges/endpoint-badge)
+JSON payload built from the composite score:
+
+```json
+{ "schemaVersion": 1, "label": "Nav2 readiness", "message": "76.6/100", "color": "green" }
+```
+
+- The **label** folds in the detected stack (`Nav2 readiness`, `Autoware readiness`, ...),
+  or `bag readiness` when no domain is detected. Override it with `--badge-label`.
+- The **colour** tracks the [overall score](#overall-score): `brightgreen` ≥ 85,
+  `green` ≥ 70, `yellow` ≥ 50, `orange` ≥ 30, `red` below.
+
+Host the file somewhere reachable by URL and reference it from a README:
+
+```markdown
+![bag readiness](https://img.shields.io/endpoint?url=https://example.com/badge.json)
+```
+
+`--badge` composes with `--json`; both files are written in one eval run.
 
 ## What it measures
 

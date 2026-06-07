@@ -99,6 +99,7 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | `bagx ask bag.db3 "question"` | Ask questions via LLM |
 | `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 | `bagx eval bag.db3 --rules rules.json` | Apply custom topic/type/rate/latency rules for your stack |
+| `bagx eval bag.db3 --badge badge.json` | Emit a shields.io readiness badge you can show in a README |
 | `bagx rules list` | List discoverable built-in and installed custom-rule plugins |
 
 ## Representative results
@@ -229,6 +230,31 @@ bagx eval my_custom_stack.db3 --rules warehouse_bot
 JSON outputs now include `schema_version`, `report_type`, `bagx_version`, and structured
 `findings`, so they are easier to gate in CI and compare across releases without depending
 on human-facing recommendation text.
+
+### Readiness badge
+
+Turn any eval into a README badge with `--badge`:
+
+```bash
+bagx eval my_bag.db3 --badge bag-badge.json
+```
+
+This writes a [shields.io endpoint](https://shields.io/badges/endpoint-badge) payload:
+
+```json
+{ "schemaVersion": 1, "label": "Nav2 readiness", "message": "76.6/100", "color": "green" }
+```
+
+Host the file (raw GitHub, GitHub Pages, an artifact store) and reference it:
+
+```markdown
+![bag readiness](https://img.shields.io/endpoint?url=https://example.com/bag-badge.json)
+```
+
+The label folds in the detected stack (e.g. `Nav2 readiness`); override it with
+`--badge-label`. The colour tracks the composite score — green when a bag is fit
+for its declared stack, red when it is not — so the badge tells the whole story at
+a glance.
 
 Typical local workflow:
 

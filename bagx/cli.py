@@ -184,6 +184,12 @@ def eval(
     include_anomaly: bool = typer.Option(
         False, "--include-anomaly", help="Also run anomaly detection and merge its temporal findings (fix-lost segments, spike clusters, rate gaps) into the report"
     ),
+    badge_output: Optional[str] = typer.Option(
+        None, "--badge", help="Write a shields.io endpoint JSON badge of the readiness score to this file (reference via https://img.shields.io/endpoint?url=...)"
+    ),
+    badge_label: Optional[str] = typer.Option(
+        None, "--badge-label", help="Override the badge label (default: '<domains> readiness')"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -220,6 +226,12 @@ def eval(
             with open(json_output, "w") as f:
                 json.dump(data, f, indent=2)
             console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
+        if badge_output:
+            from bagx.badge import eval_badge
+
+            with open(badge_output, "w") as f:
+                json.dump(eval_badge(report, label=badge_label), f, indent=2)
+            console.print(f"Readiness badge saved to: [cyan]{badge_output}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)

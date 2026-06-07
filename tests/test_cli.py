@@ -75,6 +75,30 @@ class TestCliEval:
             data = json.load(f)
         assert "gnss" in data
 
+    def test_eval_badge(self, nav2_bag: Path, tmp_path: Path):
+        import json
+
+        badge_path = tmp_path / "badge.json"
+        result = runner.invoke(app, ["eval", str(nav2_bag), "--badge", str(badge_path)])
+        assert result.exit_code == 0
+
+        with open(badge_path) as f:
+            badge = json.load(f)
+        assert badge["schemaVersion"] == 1
+        assert badge["message"].endswith("/100")
+        assert "Nav2" in badge["label"]
+
+    def test_eval_badge_label_override(self, gnss_bag: Path, tmp_path: Path):
+        import json
+
+        badge_path = tmp_path / "badge.json"
+        result = runner.invoke(
+            app, ["eval", str(gnss_bag), "--badge", str(badge_path), "--badge-label", "fleet-7"]
+        )
+        assert result.exit_code == 0
+        with open(badge_path) as f:
+            assert json.load(f)["label"] == "fleet-7"
+
     def test_eval_not_found(self):
         result = runner.invoke(app, ["eval", "/nonexistent.db3"])
         assert result.exit_code == 1
