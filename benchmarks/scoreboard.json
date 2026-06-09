@@ -1,0 +1,607 @@
+{
+  "schema_version": "1.0",
+  "suite_name": "public-scoreboard",
+  "description": "Public rosbag datasets scored with bagx eval. Refresh via scripts/generate_scoreboard.py --refresh.",
+  "cases": [
+    {
+      "name": "newer-college-handheld",
+      "display_name": "Newer College (handheld)",
+      "domain": "SLAM",
+      "ros": "ros2",
+      "source_url": "https://ori-drs.github.io/newer_college_dataset/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/newer_college.db3",
+      "reproduce": "bagx eval newer_college.db3",
+      "download_hint": "Request access via the Newer College dataset page; convert/play the sequence as rosbag2.",
+      "results": {
+        "overall_score": 92.3,
+        "imu_score": 84.5,
+        "sync_score": 100.0,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "LiDAR+IMU quality is strong enough for SLAM benchmarking",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2025-11-01"
+      }
+    },
+    {
+      "name": "livox-mid360",
+      "display_name": "Livox MID-360",
+      "domain": "SLAM",
+      "ros": "ros2",
+      "source_url": "https://www.livoxtech.com/mid-360",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/livox_mid360.db3",
+      "reproduce": "bagx eval livox_mid360.db3",
+      "download_hint": "Community MID-360 rosbag recordings (see Livox SDK examples and Hugging Face mirrors).",
+      "results": {
+        "overall_score": 83.7,
+        "imu_score": 97.3,
+        "sync_score": 70.0,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "IMU is excellent but LiDAR\u2194IMU sync ~25ms \u2014 enable deskew",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2025-11-01"
+      }
+    },
+    {
+      "name": "ntu-viral-drone",
+      "display_name": "NTU VIRAL (drone)",
+      "domain": "SLAM",
+      "ros": "ros2",
+      "source_url": "https://github.com/ntu-aris/ntu_viral_dataset",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/ntu_viral.db3",
+      "reproduce": "bagx eval ntu_viral.db3",
+      "download_hint": "Clone NTU VIRAL dataset and play/record as rosbag2.",
+      "results": {
+        "overall_score": 79.8,
+        "imu_score": 59.5,
+        "sync_score": 100.0,
+        "gnss_score": 80.0,
+        "domain_score": null,
+        "key_finding": "Noisy IMU \u2014 LiDAR-only SLAM (e.g. KISS-ICP) recommended",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2025-11-01"
+      }
+    },
+    {
+      "name": "ouster-os0-32-static",
+      "display_name": "Ouster OS0-32 (static)",
+      "domain": "SLAM",
+      "ros": "ros2",
+      "source_url": "https://data.ouster.io/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/ouster_os0-32.db3",
+      "reproduce": "bagx eval ouster_os0-32.db3",
+      "download_hint": "Ouster sample recordings or static calibration captures.",
+      "results": {
+        "overall_score": 76.6,
+        "imu_score": 79.6,
+        "sync_score": 73.6,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "50Hz IMU is slow for deskew; sync margin is thin",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2025-11-01"
+      }
+    },
+    {
+      "name": "tum-vi-calib-imu1",
+      "display_name": "TUM VI calib-imu1",
+      "domain": "SLAM",
+      "ros": "ros1",
+      "source_url": "https://cvg.cit.tum.de/tumvi/dataset/calibration",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/dataset-calib-imu1_512_16.bag",
+      "reproduce": "pip install bagx[ros1] && bagx eval dataset-calib-imu1_512_16.bag",
+      "download_hint": "wget https://cvg.cit.tum.de/tumvi/calibrated/512_16/dataset-calib-imu1_512_16.bag",
+      "results": {
+        "overall_score": 95.40921707640715,
+        "imu_score": 90.81843415281428,
+        "sync_score": 100,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "IMU accel noise 0.0515 m/s\u00b2 \u2014 good for LIO, set imu_acc_noise_density to 0.0515",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "euroc-mh01-easy",
+      "display_name": "EuRoC MH_01_easy",
+      "domain": "SLAM",
+      "ros": "ros1",
+      "source_url": "https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/MH_01_easy.bag",
+      "reproduce": "pip install bagx[ros1] && bagx eval MH_01_easy.bag",
+      "download_hint": "Download from ETH Research Collection if robotics.ethz.ch is unreachable.",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending download \u2014 classic VIO benchmark (ROS1 .bag)",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    },
+    {
+      "name": "urbannav-hk-tst",
+      "display_name": "UrbanNav HK TST",
+      "domain": "SLAM",
+      "ros": "ros1",
+      "source_url": "https://github.com/IPNL-POLYU/UrbanNavDataset",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/UrbanNav-HK_TST-20210517_sensors.bag",
+      "reproduce": "pip install bagx[ros1] && bagx eval UrbanNav-HK_TST-20210517_sensors.bag",
+      "download_hint": "Dropbox link in UrbanNavDataset README (ROS1 .bag with LiDAR, cameras, GNSS/INS).",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending download \u2014 urban canyon GNSS + LiDAR fusion bag",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    },
+    {
+      "name": "hilti-slam-challenge-2022",
+      "display_name": "Hilti SLAM Challenge 2022",
+      "domain": "SLAM",
+      "ros": "ros2",
+      "source_url": "https://hilti-challenge.com/dataset-2022.html",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/hilti_2022_exp04.db3",
+      "reproduce": "bagx eval hilti_2022_exp04.db3",
+      "download_hint": "Register on Hilti Challenge site for construction SLAM rosbags.",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending download \u2014 construction-site LiDAR+IMU benchmark",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    },
+    {
+      "name": "m2dgr-urban",
+      "display_name": "M2DGR (urban street)",
+      "domain": "SLAM",
+      "ros": "ros2",
+      "source_url": "https://github.com/SJTU-ViSYS/M2DGR",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/m2dgr_urban.db3",
+      "reproduce": "bagx eval m2dgr_urban.db3",
+      "download_hint": "Clone M2DGR and export/play urban street sequences as rosbag2.",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending download \u2014 multi-sensor GNSS/IMU/LiDAR urban dataset",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    },
+    {
+      "name": "autoware-all-sensors-bag4",
+      "display_name": "Autoware all-sensors-bag4",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autoware_isuzu_all_sensors_bag4",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag4_compressed/ ./all-sensors-bag4_compressed --no-sign-request && bagx eval all-sensors-bag4_compressed",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag4_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 72.2,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 72.2,
+        "key_finding": "Sensing/localization-only bag \u2014 planning/control topics absent",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2026-03-24"
+      }
+    },
+    {
+      "name": "autoware-driving-20",
+      "display_name": "Autoware driving_20_kmh",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/driving_20",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_20_kmh_2022_06_10-16_01_55_compressed/ ./driving_20 --no-sign-request && bagx eval driving_20",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_20_kmh_2022_06_10-16_01_55_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 99.0,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 99.0,
+        "key_finding": "LiDAR packets and /vehicle/status/velocity_status at healthy rates",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2026-03-24"
+      }
+    },
+    {
+      "name": "autoware-driving-30",
+      "display_name": "Autoware driving_30_kmh",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/driving_30",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_30_kmh_2022_06_10-15_47_42_compressed/ ./driving_30 --no-sign-request && bagx eval driving_30",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_30_kmh_2022_06_10-15_47_42_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 98.94988901467738,
+        "imu_score": null,
+        "sync_score": 97.89977802935478,
+        "gnss_score": null,
+        "domain_score": 100.0,
+        "key_finding": "Sensor sync good (8.4ms)",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "autoware-all-sensors-bag1",
+      "display_name": "Autoware all-sensors-bag1",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autoware_isuzu_all_sensors_bag1",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag1_compressed/ ./all-sensors-bag1_compressed --no-sign-request && bagx eval all-sensors-bag1_compressed",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag1_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 90.21974885992535,
+        "imu_score": 85.82677009698489,
+        "sync_score": 75.11282171740322,
+        "gnss_score": 99.93940362531329,
+        "domain_score": 100.0,
+        "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "autoware-all-sensors-bag2",
+      "display_name": "Autoware all-sensors-bag2",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autoware_isuzu_all_sensors_bag2",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag2_compressed/ ./all-sensors-bag2_compressed --no-sign-request && bagx eval all-sensors-bag2_compressed",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag2_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 86.08769163388149,
+        "imu_score": 69.83487539067384,
+        "sync_score": 74.57870657933054,
+        "gnss_score": 99.93718456552156,
+        "domain_score": 100.0,
+        "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "autoware-all-sensors-bag3",
+      "display_name": "Autoware all-sensors-bag3",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autoware_isuzu_all_sensors_bag3",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag3_compressed/ ./all-sensors-bag3_compressed --no-sign-request && bagx eval all-sensors-bag3_compressed",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag3_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 81.69113826327117,
+        "imu_score": 78.66639251274911,
+        "sync_score": 59.029056565563835,
+        "gnss_score": 99.94410397477174,
+        "domain_score": 89.125,
+        "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "autocore-os1-64",
+      "display_name": "AutoCore Ouster OS1-64",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autocore_os1_64",
+      "reproduce": "bagx eval autocore_os1_64",
+      "download_hint": "gdown 13oypA5UdlW1XIqw6l5C3qf0I4sFaZ1Nz && unzip; use rosbag2_2022_04_14-ped_vehicle/",
+      "results": {
+        "overall_score": 100.0,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 100.0,
+        "key_finding": "LiDAR (/sensing/lidar/top/rectified/pointcloud) at 10Hz",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "turtlebot3-walker",
+      "display_name": "TurtleBot3 Walker",
+      "domain": "Nav2",
+      "ros": "ros2",
+      "source_url": "https://huggingface.co/datasets/okritvik/TurtleBot3_Walker",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/turtlebot3_walker",
+      "reproduce": "bagx eval turtlebot3_walker",
+      "download_hint": "huggingface-cli download okritvik/TurtleBot3_Walker",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending eval \u2014 Nav2 Walker bag (odom, scan, cmd_vel)",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    },
+    {
+      "name": "nav2-simulator-deep",
+      "display_name": "Nav2 Gazebo (deep capture)",
+      "domain": "Nav2",
+      "ros": "ros2",
+      "source_url": "https://github.com/rsasaki0109/bagx",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/nav2-deep-final-20260324-185315",
+      "reproduce": "python scripts/run_ros_dogfood.py nav2-gazebo && bagx eval <captured_bag>",
+      "download_hint": "Capture locally with scripts/run_ros_dogfood.py nav2-gazebo (see bagx dogfooding docs).",
+      "results": {
+        "overall_score": 100.0,
+        "imu_score": 100.0,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 100.0,
+        "key_finding": "Pipeline scan \u2192 costmap: 43ms median, 82ms P95",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "nav2-simulator-headless",
+      "display_name": "Nav2 Gazebo (headless)",
+      "domain": "Nav2",
+      "ros": "ros2",
+      "source_url": "https://github.com/rsasaki0109/bagx",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/nav2-gazebo-headless-20260324-174449",
+      "reproduce": "python scripts/run_ros_dogfood.py nav2-gazebo-headless && bagx eval <captured_bag>",
+      "download_hint": "Capture locally with scripts/run_ros_dogfood.py nav2-gazebo-headless.",
+      "results": {
+        "overall_score": 100.0,
+        "imu_score": 100.0,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 100.0,
+        "key_finding": "Control command (/cmd_vel) at 10Hz \u2014 good for control-loop observability",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "nav2-simulator-goal",
+      "display_name": "Nav2 Gazebo (goal capture)",
+      "domain": "Nav2",
+      "ros": "ros2",
+      "source_url": "https://github.com/rsasaki0109/bagx",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/nav2-gazebo-goal-20260324-181214",
+      "reproduce": "python scripts/run_ros_dogfood.py nav2-gazebo-goal && bagx eval <captured_bag>",
+      "download_hint": "Capture locally with scripts/run_ros_dogfood.py nav2-gazebo-goal.",
+      "results": {
+        "overall_score": 88.56145988962963,
+        "imu_score": 100.0,
+        "sync_score": 77.12291977925926,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "IMU accel noise 0.0170 m/s\u00b2 \u2014 excellent, set imu_acc_noise_density to 0.0170",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "franka-panda-moveit",
+      "display_name": "Franka Panda (MoveIt)",
+      "domain": "MoveIt",
+      "ros": "ros2",
+      "source_url": "https://huggingface.co/datasets/adriankobras/panda",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/panda",
+      "reproduce": "bagx eval panda",
+      "download_hint": "huggingface-cli download adriankobras/panda",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending eval \u2014 Franka Panda MoveIt demonstration bag",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    },
+    {
+      "name": "moveit-simulator-exec",
+      "display_name": "MoveIt execution capture",
+      "domain": "MoveIt",
+      "ros": "ros2",
+      "source_url": "https://github.com/rsasaki0109/bagx",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/moveit-exec-final-20260324-185315",
+      "reproduce": "python scripts/run_ros_dogfood.py moveit-demo && bagx eval <captured_bag>",
+      "download_hint": "Capture locally with scripts/run_ros_dogfood.py moveit-demo.",
+      "results": {
+        "overall_score": 100.0,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 100.0,
+        "key_finding": "Pipeline joint_states \u2192 planned_path: 6ms median, 6ms P95 (1 sample)",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "moveit-simulator-plan",
+      "display_name": "MoveIt plan-only capture",
+      "domain": "MoveIt",
+      "ros": "ros2",
+      "source_url": "https://github.com/rsasaki0109/bagx",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/moveit-demo-plan-20260324-173327",
+      "reproduce": "python scripts/run_ros_dogfood.py moveit-demo-plan && bagx eval <captured_bag>",
+      "download_hint": "Capture locally with scripts/run_ros_dogfood.py moveit-demo-plan.",
+      "results": {
+        "overall_score": 66.66666666666667,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 66.66666666666667,
+        "key_finding": "Pipeline joint_states \u2192 planned_path: 9ms median, 9ms P95 (1 sample)",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "r2b-galileo",
+      "display_name": "NVIDIA r2b_galileo",
+      "domain": "Perception",
+      "ros": "ros2",
+      "source_url": "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/r2b_galileo",
+      "reproduce": "bagx eval r2b_galileo",
+      "download_hint": "NVIDIA PhysicalAI open-data MCAP (r2b_galileo).",
+      "results": {
+        "overall_score": 90.5,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 90.5,
+        "key_finding": "Eight camera streams + IMU + chassis odom time-aligned",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2026-03-24"
+      }
+    },
+    {
+      "name": "r2b-whitetunnel",
+      "display_name": "NVIDIA r2b_whitetunnel",
+      "domain": "Perception",
+      "ros": "ros2",
+      "source_url": "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/r2b_whitetunnel",
+      "reproduce": "bagx eval r2b_whitetunnel",
+      "download_hint": "NVIDIA PhysicalAI open-data MCAP (r2b_whitetunnel).",
+      "results": {
+        "overall_score": 91.3,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 91.3,
+        "key_finding": "Multi-camera + IMU; noisy accel flagged but perception coverage solid",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2026-03-24"
+      }
+    },
+    {
+      "name": "r2b-galileo2",
+      "display_name": "NVIDIA r2b_galileo2",
+      "domain": "Perception",
+      "ros": "ros2",
+      "source_url": "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/r2b_galileo2",
+      "reproduce": "bagx eval r2b_galileo2",
+      "download_hint": "NVIDIA PhysicalAI open-data MCAP (r2b_galileo2).",
+      "results": {
+        "overall_score": 95.3,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 95.3,
+        "key_finding": "RGB-D + infra + camera_info \u2014 reusable for perception export",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2026-03-24"
+      }
+    },
+    {
+      "name": "r2b-robotarm",
+      "display_name": "NVIDIA r2b_robotarm",
+      "domain": "Manipulation",
+      "ros": "ros2",
+      "source_url": "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/r2b_robotarm",
+      "reproduce": "bagx eval r2b_robotarm",
+      "download_hint": "NVIDIA PhysicalAI open-data MCAP (r2b_robotarm).",
+      "results": {
+        "overall_score": 96.0,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": 96.0,
+        "key_finding": "RGB-D + joint_states suitable for arm perception benchmarking",
+        "bagx_version": "0.4.0",
+        "evaluated_at": "2026-03-24"
+      }
+    },
+    {
+      "name": "autoware-all-sensors-bag5",
+      "display_name": "Autoware all-sensors-bag5",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autoware_isuzu_all_sensors_bag5",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag5_compressed/ ./all-sensors-bag5_compressed --no-sign-request && bagx eval all-sensors-bag5_compressed",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag5_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 84.53373542467293,
+        "imu_score": 77.92180192411674,
+        "sync_score": 64.52515925964352,
+        "gnss_score": 99.93798051493144,
+        "domain_score": 95.75,
+        "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "autoware-all-sensors-bag6",
+      "display_name": "Autoware all-sensors-bag6",
+      "domain": "Autoware",
+      "ros": "ros2",
+      "source_url": "https://autowarefoundation.github.io/autoware-documentation/main/datasets/",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/autoware_isuzu_all_sensors_bag6",
+      "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag6_compressed/ ./all-sensors-bag6_compressed --no-sign-request && bagx eval all-sensors-bag6_compressed",
+      "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag6_compressed/ ... --no-sign-request",
+      "results": {
+        "overall_score": 76.96969577195384,
+        "imu_score": 40.257730626018514,
+        "sync_score": 69.86184129760197,
+        "gnss_score": 99.92587783086148,
+        "domain_score": 97.83333333333334,
+        "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
+      }
+    },
+    {
+      "name": "urbanloco-alameda",
+      "display_name": "UrbanLoco (Alameda)",
+      "domain": "SLAM",
+      "ros": "ros1",
+      "source_url": "https://github.com/weisongwen/UrbanLoco",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/UrbanLoco_Alameda.bag",
+      "reproduce": "pip install bagx[ros1] && bagx eval UrbanLoco_Alameda.bag",
+      "download_hint": "UrbanLoco dataset \u2014 download ROS1 bags from project page.",
+      "results": {
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
+        "gnss_score": null,
+        "domain_score": null,
+        "key_finding": "Pending download \u2014 long urban GNSS/IMU/LiDAR sequence",
+        "bagx_version": null,
+        "evaluated_at": null
+      }
+    }
+  ]
+}

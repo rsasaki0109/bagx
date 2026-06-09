@@ -666,6 +666,24 @@ def scene(
 
 
 @app.command()
+def mcp() -> None:
+    """Start the bagx MCP server (stdio transport).
+
+    Exposes eval, list_topics, detect_anomalies, compare_bags, and query_messages
+    tools for Claude Code / Claude Desktop. No LLM API key required.
+    """
+    try:
+        from bagx.mcp_server import run_mcp_server
+    except ImportError:
+        console.print(
+            "[red]MCP support not installed.[/red] Run: [cyan]pip install bagx[mcp][/cyan]"
+        )
+        raise typer.Exit(1)
+
+    run_mcp_server()
+
+
+@app.command()
 def info(
     bag: str = typer.Argument(..., help="Path to the bag file"),
 ) -> None:

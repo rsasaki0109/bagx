@@ -611,7 +611,8 @@ class BagReader:
             )
 
         cache_key = hashlib.sha256(str(self.path.resolve()).encode("utf-8")).hexdigest()[:16]
-        cache_dir = Path(tempfile.gettempdir()) / "bagx_db3_cache" / cache_key
+        cache_root = Path(os.environ.get("BAGX_DB3_CACHE", tempfile.gettempdir()))
+        cache_dir = cache_root / "bagx_db3_cache" / cache_key
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         decompressed_paths: list[Path] = []

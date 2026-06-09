@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bagx"
-version = "0.5.0"
+version = "0.6.0"
 description = "Post-processing analysis engine for ROS2 rosbag data"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,6 +40,9 @@ ros1 = [
 llm = [
     "anthropic>=0.30.0",
     "openai>=1.30.0",
+]
+mcp = [
+    "mcp>=1.0.0",
 ]
 dev = [
     "pytest>=7.0",

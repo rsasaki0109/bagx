@@ -2,14 +2,79 @@
 
 Gathers bag context (summary, eval, message samples) and sends it
 along with a user question to an LLM for analysis.
+
+Also exposes bag query helpers reused by ``bagx mcp`` (no LLM required).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_MAX_QUERY_LIMIT = 500
+
+
+def list_bag_topics(bag_path: str) -> dict[str, Any]:
+    """Return bag summary and per-topic metadata (used by MCP ``list_topics``)."""
+    from bagx.reader import BagReader
+
+    reader = BagReader(bag_path)
+    summary = reader.summary()
+    return {
+        "path": str(summary.path),
+        "duration_sec": summary.duration_sec,
+        "start_time_ns": summary.start_time_ns,
+        "end_time_ns": summary.end_time_ns,
+        "message_count": summary.message_count,
+        "topics": [
+            {
+                "name": name,
+                "type": info.type,
+                "count": info.count,
+                "serialization_format": info.serialization_format,
+            }
+            for name, info in sorted(summary.topics.items())
+        ],
+    }
+
+
+def query_messages(
+    bag_path: str,
+    topic: str,
+    *,
+    start_ns: int | None = None,
+    end_ns: int | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return decoded messages for one topic, optionally scoped to a time window."""
+    from bagx.reader import BagReader
+
+    reader = BagReader(bag_path)
+    summary = reader.summary()
+    if topic not in summary.topics:
+        raise ValueError(f"Topic not found: {topic}")
+
+    capped_limit = max(1, min(limit, _MAX_QUERY_LIMIT))
+    results: list[dict[str, Any]] = []
+    for msg in reader.read_messages(topics=[topic]):
+        if start_ns is not None and msg.timestamp_ns < start_ns:
+            continue
+        if end_ns is not None and msg.timestamp_ns > end_ns:
+            continue
+        results.append(
+            {
+                "topic": msg.topic,
+                "timestamp_ns": msg.timestamp_ns,
+                "timestamp_sec": msg.timestamp_sec,
+                "data": msg.data,
+            }
+        )
+        if len(results) >= capped_limit:
+            break
+    return results
 
 
 def _build_bag_context(bag_path: str) -> str:

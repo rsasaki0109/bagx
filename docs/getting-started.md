@@ -12,6 +12,7 @@ pip install bagx
 pip install bagx[mcap]   # .mcap file support
 pip install bagx[ros1]    # ROS1 .bag support (pure Python via rosbags)
 pip install bagx[llm]    # LLM-powered ask command (Anthropic / OpenAI)
+pip install bagx[mcp]    # MCP server for Claude Code / Desktop (no LLM key)
 ```
 
 ### From source

@@ -50,10 +50,21 @@ It also supports optional `rules_path` values to apply custom message rules. `ru
 }
 ```
 
-The repository ships two ready-made suites:
+The repository ships ready-made suites:
 
 - `benchmarks/open_data_suite.json`: public Autoware + NVIDIA bags
 - `benchmarks/non_slam_suite.json`: perception/manipulation plus optional local Nav2 / MoveIt dogfood bags
+- `benchmarks/scoreboard.json`: **30 public datasets** for the [Scoreboard](../scoreboard.md) page
+
+Regenerate the docs table after scoring local bags:
+
+```bash
+./scripts/fetch_scoreboard_bags.sh   # Autoware S3 + AutoCore (optional)
+export BAGX_SCOREBOARD_BAGS=/path/to/bags
+export BAGX_DB3_CACHE=/path/with/free/space
+python scripts/generate_scoreboard.py --refresh --write-manifest
+python scripts/generate_scoreboard.py
+```
 
 For proprietary stacks, pair a benchmark manifest with a custom rules plugin or file and keep your expectations in `required_domains`, `required_recommendations`, and `min_topic_rates`.
 

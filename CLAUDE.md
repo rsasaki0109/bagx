@@ -156,7 +156,23 @@ EuRoC MH_01 は `robotics.ethz.ch` が不通の環境では ETH Research Collect
 4. GitHub Actions (publish.yml) が自動でPyPIに公開 (Trusted Publisher)
 5. `gh release create vX.Y.Z` でGitHub Release作成
 
+## MCP サーバー (P5)
+- `pip install bagx[mcp]` — `mcp` Python SDK（LLM キー不要）
+- `bagx mcp` — stdio MCP server
+- Tools: `eval_bag`, `list_topics`, `detect_anomalies`, `compare_bags`, `query_messages`
+- `query_messages` / `list_bag_topics` は `ask.py` のヘルパーを再利用
+- 設定例: `claude mcp add bagx -- bagx mcp`（`docs/guide/mcp.md`）
+
+## スコアボード (P6)
+- `benchmarks/scoreboard.json` — 公開30データセットの manifest（スコア・再現コマンド付き）
+- `scripts/generate_scoreboard.py` — manifest → `docs/scoreboard.md` 自動生成
+- `--refresh --write-manifest` でローカル bag からスコア更新（`BAGX_SCOREBOARD_BAGS`）
+- `.db3.zstd` 展開先: `BAGX_DB3_CACHE`（`/tmp` 満杯時は `.cache/db3-decompress` 等を指定）
+- `scripts/fetch_scoreboard_bags.sh` — Autoware S3 + AutoCore を一括取得
+- 分析記事: `docs/scoreboard/why-*.md`（低スコアの理由解説）
+
 ## ドキュメント
 - `mkdocs.yml` + `docs/` → GitHub Pages (`mkdocs gh-deploy`)
 - `docs.yml` ワークフローでmainにpush時に自動デプロイ
 - `scripts/generate_docs.py --update` でREADMEのCLI Referenceを更新
+- `scripts/generate_scoreboard.py` でスコアボード表を更新

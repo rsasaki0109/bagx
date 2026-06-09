@@ -122,6 +122,7 @@ pip install bagx[ros1]   # ROS1 .bag support (pure Python via rosbags)
 | `bagx export bag.db3 --ai` | Export to Parquet/JSON for ML |
 | `bagx batch eval *.db3 --csv` | Rank an entire dataset |
 | `bagx ask bag.db3 "question"` | Ask questions via LLM |
+| `bagx mcp` | MCP server for agents (eval/topics/anomalies — no LLM key) |
 | `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 | `bagx eval bag.db3 --rules rules.json` | Apply custom topic/type/rate/latency rules for your stack |
 | `bagx eval bag.db3 --badge badge.json` | Emit a shields.io readiness badge you can show in a README |
@@ -131,6 +132,12 @@ pip install bagx[ros1]   # ROS1 .bag support (pure Python via rosbags)
 | `bagx rules list` | List discoverable built-in and installed custom-rule plugins |
 | `bagx domains list` | List built-in and installed domain detection plugins |
 | `bagx tune --list` | List supported SLAM framework tuners |
+
+## Public dataset scoreboard
+
+**30 public rosbag datasets** scored and documented — see the full table on the docs site:
+[Scoreboard](https://rsasaki0109.github.io/bagx/scoreboard/) (generated from
+`benchmarks/scoreboard.json` via `scripts/generate_scoreboard.py`).
 
 ## Representative results
 
