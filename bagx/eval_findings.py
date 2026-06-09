@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
 
+from bagx.domain_plugins import detect_domains, discover_domain_plugins
 from bagx.findings import Evidence, Finding, clean_topic_token, finding_id
 
 if TYPE_CHECKING:
@@ -43,20 +44,33 @@ if TYPE_CHECKING:
 
 
 def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Finding]:
-    """Generate structured findings for JSON reports and benchmark contracts."""
+    """Generate structured findings for JSON reports and benchmark contracts.
+
+    ``domain_names`` is accepted for backwards compatibility — callers used to
+    pass the precomputed set of detected domain names. The plugin registry is
+    the source of truth today, so the set only seeds the legacy "no detected
+    domain → SLAM fallback" behaviour.
+    """
     findings: list[Finding] = []
     topics = report.topic_info
-    is_non_slam_domain = bool(domain_names)
+    plugins = discover_domain_plugins()
+    detected_plugins = detect_domains(topics, plugins) if topics else []
+    detected_names = {plugin.name for plugin in detected_plugins}
+    # Honour legacy callers that hand us a precomputed domain set (e.g.
+    # custom-domain-only bags where the topic_info would not match a built-in
+    # plugin but the caller still considers the bag "domain-aware").
+    is_non_slam_domain = bool(detected_names or domain_names)
 
-    for domain_name in sorted(domain_names):
+    for plugin in sorted(detected_plugins, key=lambda p: p.name.lower()):
+        domain_id = _domain_id(plugin.name)
         findings.append(
             Finding(
-                id=finding_id(_domain_id(domain_name), "detected"),
-                title=f"{domain_name} topics detected",
+                id=finding_id(domain_id, "detected"),
+                title=f"{plugin.name} topics detected",
                 severity="info",
                 category="domain_detection",
-                domain=_domain_id(domain_name),
-                affected_topics=_domain_representative_topics(domain_name, topics),
+                domain=domain_id,
+                affected_topics=plugin.representative_topics(topics),
                 evidence=[Evidence(metric="domain_detected", observed=True, expected=True)],
                 confidence="high",
             )
@@ -65,7 +79,8 @@ def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Findin
     findings.extend(_generate_gnss_findings(report, is_non_slam_domain))
     findings.extend(_generate_imu_findings(report, is_non_slam_domain))
     findings.extend(_generate_sync_findings(report, is_non_slam_domain))
-    findings.extend(_generate_nav2_findings(report, domain_names))
+    for plugin in detected_plugins:
+        findings.extend(plugin.generate_findings(report))
     findings.extend(_generate_custom_domain_findings(report.custom_domains))
     findings.extend(_generate_workflow_findings(report.workflow_metrics))
 
@@ -298,10 +313,8 @@ def _generate_sync_findings(report: EvalReport, is_non_slam_domain: bool) -> lis
     ]
 
 
-def _generate_nav2_findings(report: EvalReport, domain_names: set[str]) -> list[Finding]:
-    if "Nav2" not in domain_names:
-        return []
-
+def _generate_nav2_findings_from_plugin(report: EvalReport) -> list[Finding]:
+    """Emit Nav2-specific findings; invoked by the Nav2 domain plugin."""
     topics = report.topic_info
     findings: list[Finding] = []
     odom_topics = _select_topics(
@@ -570,34 +583,6 @@ def _generate_workflow_findings(metrics: list["WorkflowMetrics"]) -> list[Findin
                 )
             )
     return findings
-
-
-def _domain_representative_topics(domain_name: str, topics: dict[str, dict]) -> list[str]:
-    domain = _domain_id(domain_name)
-    if domain == "nav2":
-        return _select_topics(
-            topics,
-            type_markers=("odometry", "laserscan"),
-            suffixes=("/odom", "/scan", "/cmd_vel", "/cmd_vel_smoothed"),
-            contains=("navigate_to_pose", "local_costmap", "global_costmap"),
-        )[:8]
-    if domain == "autoware":
-        prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
-        return [name for name in topics if any(name.startswith(prefix) for prefix in prefixes)][:8]
-    if domain == "moveit":
-        return _select_topics(
-            topics,
-            type_markers=("jointstate", "displaytrajectory", "planningscene"),
-            suffixes=("/joint_states", "/display_planned_path"),
-            contains=("move_action", "execute_trajectory", "follow_joint_trajectory"),
-        )[:8]
-    if domain in {"perception", "robotarm"}:
-        return _select_topics(
-            topics,
-            type_markers=("image", "compressedimage", "camerainfo", "jointstate"),
-            contains=("camera_info", "joint_states"),
-        )[:8]
-    return list(topics)[:8]
 
 
 def _select_topics(

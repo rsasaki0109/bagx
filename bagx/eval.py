@@ -1598,91 +1598,9 @@ def _detect_domain_names(topics: dict[str, dict]) -> set[str]:
     if not topics:
         return set()
 
-    names: set[str] = set()
+    from bagx.domain_plugins import detect_domains
 
-    if _has_nav2_signature(topics):
-        names.add("Nav2")
-
-    autoware_prefixes = ("/sensing/", "/perception/", "/planning/", "/control/", "/localization/", "/vehicle/")
-    autoware_topics = [
-        name for name in topics if any(name.startswith(prefix) for prefix in autoware_prefixes)
-    ]
-    if autoware_topics:
-        names.add("Autoware")
-
-    joint_state_topics = _select_topics(
-        topics,
-        type_markers=("jointstate",),
-        suffixes=("/joint_states",),
-        contains=("joint_states",),
-    )
-    planned_path_topics = _select_topics(
-        topics,
-        type_markers=("displaytrajectory",),
-        suffixes=("/display_planned_path",),
-        contains=("display_planned_path", "planned_path"),
-    )
-    planning_scene_topics = _select_topics(
-        topics,
-        type_markers=("planningscene",),
-        suffixes=("/planning_scene", "/monitored_planning_scene"),
-        contains=("planning_scene", "monitored_planning_scene"),
-    )
-    move_action_status_topics = _select_topics(
-        topics,
-        contains=("move_action/_action/status",),
-    )
-    execute_action_status_topics = _select_topics(
-        topics,
-        contains=("execute_trajectory/_action/status",),
-    )
-    controller_action_status_topics = _select_topics(
-        topics,
-        contains=("follow_joint_trajectory/_action/status",),
-    )
-    moveit_evidence = sum(
-        bool(matches)
-        for matches in [
-            joint_state_topics,
-            planned_path_topics,
-            planning_scene_topics,
-            move_action_status_topics,
-            execute_action_status_topics,
-            controller_action_status_topics,
-        ]
-    )
-    if moveit_evidence >= 2 or (joint_state_topics and planned_path_topics):
-        names.add("MoveIt")
-
-    image_topics = _select_topics(
-        topics,
-        type_markers=("image", "compressedimage"),
-    )
-    color_image_topics = [
-        name for name in image_topics if "depth" not in name.lower() and "infra" not in name.lower()
-    ]
-    depth_image_topics = [name for name in image_topics if "depth" in name.lower()]
-    infra_image_topics = [name for name in image_topics if "infra" in name.lower()]
-    if joint_state_topics and (color_image_topics or depth_image_topics):
-        names.add("RobotArm")
-
-    camera_info_topics = _select_topics(
-        topics,
-        type_markers=("camerainfo",),
-        contains=("camera_info",),
-    )
-    if (
-        camera_info_topics
-        and (color_image_topics or depth_image_topics or infra_image_topics)
-        and "RobotArm" not in names
-        and "Autoware" not in names
-    ):
-        names.add("Perception")
-
-    if _has_control_signature(topics) and not ({"Nav2", "Autoware", "MoveIt"} & names):
-        names.add("Control")
-
-    return names
+    return {plugin.name for plugin in detect_domains(topics)}
 
 
 def _compute_domain_score(report: EvalReport) -> float | None:

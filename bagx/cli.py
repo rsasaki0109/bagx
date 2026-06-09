@@ -30,6 +30,8 @@ batch_app = typer.Typer(help="Batch operations on multiple bags")
 app.add_typer(batch_app, name="batch")
 rules_app = typer.Typer(help="Custom rule plugins")
 app.add_typer(rules_app, name="rules")
+domains_app = typer.Typer(help="Domain detection plugins")
+app.add_typer(domains_app, name="domains")
 
 
 @app.callback()
@@ -326,6 +328,22 @@ def rules_list() -> None:
     table.add_column("Description")
     for plugin in plugins:
         table.add_row(plugin.name, plugin.source, plugin.description or "-")
+    console.print(table)
+
+
+@domains_app.command("list")
+def domains_list() -> None:
+    """List built-in and installed domain detection plugins."""
+    from rich.table import Table
+
+    from bagx.domain_plugins import discover_domain_plugins, plugin_source_label
+
+    plugins = discover_domain_plugins()
+    table = Table(title="Domain Plugins", show_header=True)
+    table.add_column("Name", style="bold")
+    table.add_column("Source")
+    for plugin in plugins:
+        table.add_row(plugin.name, plugin_source_label(plugin))
     console.print(table)
 
 
