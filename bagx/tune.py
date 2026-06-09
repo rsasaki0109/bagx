@@ -1,0 +1,364 @@
+"""SLAM framework config generation from bagx eval reports.
+
+Tuners are read-only consumers of :class:`bagx.eval.EvalReport`. They map
+measured IMU noise, bias stability, LiDAR/IMU topics, and sync delay into
+framework-specific YAML starting points.
+"""
+
+from __future__ import annotations
+
+import importlib.metadata as _md
+import logging
+import math
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
+
+import numpy as np
+
+from bagx import __version__
+
+if TYPE_CHECKING:
+    from bagx.eval import EvalReport
+
+logger = logging.getLogger("bagx.tune")
+
+ENTRY_POINT_GROUP = "bagx.tuners"
+NOT_ESTIMATED = "# bagx: not estimated, framework default"
+DESKEW_THRESHOLD_MS = 10.0
+_STARTING_POINT_NOTE = (
+    "# Starting-point parameters inferred from bag metrics.",
+    "# Not a guarantee of SLAM performance — review before deployment.",
+)
+
+
+@runtime_checkable
+class FrameworkTuner(Protocol):
+    """Protocol implemented by built-in and third-party framework tuners."""
+
+    name: str
+    aliases: tuple[str, ...]
+
+    def tune(self, report: "EvalReport") -> str: ...
+
+
+@dataclass
+class SimpleTuner:
+    """Function-backed tuner for built-in and example usage."""
+
+    name: str
+    aliases: tuple[str, ...]
+    tune_fn: Callable[["EvalReport"], str]
+
+    def tune(self, report: "EvalReport") -> str:
+        return self.tune_fn(report)
+
+
+def discover_tuners() -> list[FrameworkTuner]:
+    """Return built-in tuners followed by entry-point installed tuners."""
+    return [*_builtin_tuners(), *_entry_point_tuners()]
+
+
+def resolve_tuner(name: str) -> FrameworkTuner | None:
+    """Resolve a tuner by canonical name or alias (case-insensitive)."""
+    normalized = _normalize_name(name)
+    for tuner in discover_tuners():
+        candidates = {_normalize_name(tuner.name), *(_normalize_name(alias) for alias in tuner.aliases)}
+        if normalized in candidates:
+            return tuner
+    return None
+
+
+def tune_report(report: "EvalReport", framework: str) -> str:
+    """Generate YAML config text for ``framework`` from ``report``."""
+    tuner = resolve_tuner(framework)
+    if tuner is None:
+        known = ", ".join(sorted({tuner.name for tuner in discover_tuners()}))
+        raise ValueError(f"Unknown framework {framework!r}. Supported: {known}")
+    return tuner.tune(report)
+
+
+def plugin_source_label(tuner: FrameworkTuner) -> str:
+    """Return ``built-in`` or ``entry-point`` for CLI display."""
+    builtin_names = {item.name for item in _builtin_tuners()}
+    return "built-in" if tuner.name in builtin_names else "entry-point"
+
+
+def default_output_path(framework: str, output: str | Path | None = None) -> Path:
+    """Resolve the yaml output path for a tune run."""
+    tuner = resolve_tuner(framework)
+    slug = _normalize_name(tuner.name if tuner else framework)
+    filename = f"{slug}_tuned.yaml"
+
+    if output is None:
+        return Path(filename)
+
+    path = Path(output)
+    if path.exists() and path.is_dir():
+        return path / filename
+    if str(output).endswith(("/", "\\")):
+        return path / filename
+    return path
+
+
+def _builtin_tuners() -> list[FrameworkTuner]:
+    return [
+        SimpleTuner(
+            name="fast_lio",
+            aliases=("fast-lio", "fast_lio2", "fast-lio2"),
+            tune_fn=_tune_fast_lio,
+        ),
+        SimpleTuner(
+            name="kiss_icp",
+            aliases=("kiss-icp", "kisicp"),
+            tune_fn=_tune_kiss_icp,
+        ),
+    ]
+
+
+def _entry_point_tuners() -> list[FrameworkTuner]:
+    plugins: list[FrameworkTuner] = []
+    try:
+        entry_points = _md.entry_points(group=ENTRY_POINT_GROUP)
+    except TypeError:
+        entry_points = _md.entry_points().get(ENTRY_POINT_GROUP, [])  # type: ignore[assignment]
+    for entry_point in entry_points:
+        try:
+            obj: Any = entry_point.load()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to load bagx.tuners plugin %s: %s", entry_point.name, exc)
+            continue
+        instance = obj() if callable(obj) and not _looks_like_tuner(obj) else obj
+        if not _looks_like_tuner(instance):
+            logger.warning(
+                "bagx.tuners entry point %r does not implement FrameworkTuner",
+                entry_point.name,
+            )
+            continue
+        plugins.append(instance)
+    return plugins
+
+
+def _looks_like_tuner(obj: Any) -> bool:
+    return (
+        hasattr(obj, "name")
+        and hasattr(obj, "aliases")
+        and callable(getattr(obj, "tune", None))
+    )
+
+
+def _normalize_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+
+
+def _provenance_header(report: "EvalReport", measurements: dict[str, str]) -> list[str]:
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [
+        f"# generated by bagx {__version__} from {report.bag_path} on {generated_at}",
+        "#",
+        *_STARTING_POINT_NOTE,
+        "#",
+    ]
+    for key, value in measurements.items():
+        lines.append(f"#   {key}: {value}")
+    lines.append("#")
+    return lines
+
+
+def _pick_lidar_topic(report: "EvalReport") -> str | None:
+    topics = report.topic_info
+    if not topics:
+        return None
+    from bagx.eval import _select_topics
+
+    candidates = _select_topics(
+        topics,
+        type_markers=("pointcloud2", "velodynescan"),
+        suffixes=("/points", "/cloud", "/scan"),
+        contains=("lidar", "pointcloud", "velodyne_packets", "cloud"),
+    )
+    if not candidates:
+        candidates = _select_topics(topics, type_markers=("pointcloud2", "velodynescan"))
+    return candidates[0] if candidates else None
+
+
+def _pick_imu_topic(report: "EvalReport") -> str | None:
+    if report.imu_topic:
+        return report.imu_topic
+    topics = report.topic_info
+    from bagx.eval import _select_topics
+
+    candidates = _select_topics(
+        topics,
+        type_markers=("imu",),
+        suffixes=("/imu",),
+        contains=("imu",),
+    )
+    return candidates[0] if candidates else None
+
+
+def _mean_imu_noise(report: "EvalReport") -> tuple[float | None, float | None]:
+    if not report.imu:
+        return None, None
+    imu = report.imu
+    accel_values = [n for n in [imu.accel_noise_x, imu.accel_noise_y, imu.accel_noise_z] if not math.isnan(n)]
+    gyro_values = [n for n in [imu.gyro_noise_x, imu.gyro_noise_y, imu.gyro_noise_z] if not math.isnan(n)]
+    accel = float(np.mean(accel_values)) if accel_values else None
+    gyro = float(np.mean(gyro_values)) if gyro_values else None
+    return accel, gyro
+
+
+def _bias_covariances(report: "EvalReport") -> tuple[float | None, float | None]:
+    if not report.imu:
+        return None, None
+    imu = report.imu
+    accel_bias = _first_valid(
+        imu.allan_accel_bias_instab,
+        imu.accel_bias_stability,
+    )
+    gyro_bias = _first_valid(
+        imu.allan_gyro_bias_instab,
+        imu.gyro_bias_stability,
+    )
+    return accel_bias, gyro_bias
+
+
+def _first_valid(*values: float) -> float | None:
+    for value in values:
+        if value is not None and not math.isnan(value):
+            return float(value)
+    return None
+
+
+def _worst_sync_delay_ms(report: "EvalReport") -> float | None:
+    if not report.sync or not report.sync.mean_delay_ms:
+        return None
+    return float(max(report.sync.mean_delay_ms))
+
+
+def _format_float(value: float | None, *, precision: int = 6) -> str:
+    if value is None or math.isnan(value):
+        return "0.0"
+    text = f"{value:.{precision}g}"
+    return text if "." in text or "e" in text else f"{text}.0"
+
+
+def _yaml_scalar(key: str, value: str, *, estimated: bool, default: str, indent: int = 4) -> str:
+    prefix = " " * indent
+    if estimated:
+        return f"{prefix}{key}: {value}"
+    return f"{prefix}{key}: {default}  {NOT_ESTIMATED}"
+
+
+def _tune_fast_lio(report: "EvalReport") -> str:
+    lidar_topic = _pick_lidar_topic(report)
+    imu_topic = _pick_imu_topic(report)
+    accel_noise, gyro_noise = _mean_imu_noise(report)
+    accel_bias, gyro_bias = _bias_covariances(report)
+    sync_delay = _worst_sync_delay_ms(report)
+
+    measurements: dict[str, str] = {}
+    if lidar_topic:
+        measurements["lidar_topic"] = lidar_topic
+    if imu_topic:
+        measurements["imu_topic"] = imu_topic
+    if accel_noise is not None:
+        measurements["accel_noise_density"] = f"{accel_noise:.6g} m/s²"
+    if gyro_noise is not None:
+        measurements["gyro_noise_density"] = f"{gyro_noise:.6g} rad/s"
+    if accel_bias is not None:
+        measurements["accel_bias_instability"] = f"{accel_bias:.6g} m/s²"
+    if gyro_bias is not None:
+        measurements["gyro_bias_instability"] = f"{gyro_bias:.6g} rad/s"
+    if sync_delay is not None:
+        measurements["worst_lidar_imu_sync_delay"] = f"{sync_delay:.3f} ms"
+
+    lines = _provenance_header(report, measurements)
+    lines.extend(
+        [
+            "common:",
+            _yaml_scalar("lid_topic", f'"{lidar_topic}"', estimated=bool(lidar_topic), default='"/points"'),
+            _yaml_scalar("imu_topic", f'"{imu_topic}"', estimated=bool(imu_topic), default='"/imu"'),
+            f"    time_sync_en: false  {NOT_ESTIMATED}",
+            f"    time_offset_lidar_to_imu: 0.0  {NOT_ESTIMATED}",
+            "",
+            "preprocess:",
+            f"    lidar_type: 2  {NOT_ESTIMATED}",
+            f"    scan_line: 16  {NOT_ESTIMATED}",
+            f"    blind: 4  {NOT_ESTIMATED}",
+            "",
+            "mapping:",
+            _yaml_scalar(
+                "acc_cov",
+                _format_float(accel_noise),
+                estimated=accel_noise is not None,
+                default="0.1",
+            ),
+            _yaml_scalar(
+                "gyr_cov",
+                _format_float(gyro_noise),
+                estimated=gyro_noise is not None,
+                default="0.1",
+            ),
+            _yaml_scalar(
+                "b_acc_cov",
+                _format_float(accel_bias, precision=8),
+                estimated=accel_bias is not None,
+                default="0.0001",
+            ),
+            _yaml_scalar(
+                "b_gyr_cov",
+                _format_float(gyro_bias, precision=8),
+                estimated=gyro_bias is not None,
+                default="0.0001",
+            ),
+            f"    fov_degree: 360  {NOT_ESTIMATED}",
+            f"    det_range: 100.0  {NOT_ESTIMATED}",
+        ]
+    )
+
+    if sync_delay is not None and sync_delay > DESKEW_THRESHOLD_MS:
+        lines.extend(
+            [
+                "",
+                f"# bagx: LiDAR↔IMU sync delay {sync_delay:.1f}ms — enable per-point deskew / timestamp compensation",
+            ]
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def _tune_kiss_icp(report: "EvalReport") -> str:
+    lidar_topic = _pick_lidar_topic(report)
+    accel_noise, gyro_noise = _mean_imu_noise(report)
+
+    measurements: dict[str, str] = {}
+    if lidar_topic:
+        measurements["lidar_topic"] = lidar_topic
+    if accel_noise is not None:
+        measurements["accel_noise_density"] = f"{accel_noise:.6g} m/s²"
+    if gyro_noise is not None:
+        measurements["gyro_noise_density"] = f"{gyro_noise:.6g} rad/s"
+
+    lines = _provenance_header(report, measurements)
+    lines.extend(
+        [
+            "kiss_icp_node:",
+            "  ros__parameters:",
+            _yaml_scalar("lidar_topic", f'"{lidar_topic}"', estimated=bool(lidar_topic), default='"/points"', indent=4),
+            f"    max_range: 100.0  {NOT_ESTIMATED}",
+            f"    min_range: 1.0  {NOT_ESTIMATED}",
+            f"    deskew: false  {NOT_ESTIMATED}",
+        ]
+    )
+
+    if report.imu is None:
+        lines.append("# bagx: No IMU data — LiDAR-only odometry (KISS-ICP) is appropriate for this bag")
+    elif accel_noise is not None and accel_noise >= 0.2:
+        lines.append(
+            f"# bagx: IMU accel noise {accel_noise:.4g} m/s² is high — LiDAR-only may outperform LIO on this bag"
+        )
+
+    return "\n".join(lines) + "\n"

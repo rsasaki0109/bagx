@@ -13,6 +13,9 @@ bagx eval recording.db3 --severity-min warning
 bagx eval recording.db3 --findings-only --severity-min error
 bagx eval recording.db3 --include-anomaly       # also merge fix-lost / spike segments
 bagx eval recording.db3 --badge badge.json      # emit a shields.io readiness badge
+bagx eval recording.db3 --tune fast_lio          # write FAST-LIO starting-point yaml
+bagx eval recording.db3 --tune kiss_icp -o cfg/ # write cfg/kiss_icp_tuned.yaml
+bagx tune --list                                # list supported frameworks
 ```
 
 ### Output filtering

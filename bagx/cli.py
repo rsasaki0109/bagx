@@ -32,6 +32,8 @@ rules_app = typer.Typer(help="Custom rule plugins")
 app.add_typer(rules_app, name="rules")
 domains_app = typer.Typer(help="Domain detection plugins")
 app.add_typer(domains_app, name="domains")
+tune_app = typer.Typer(help="SLAM framework config generation", invoke_without_command=True)
+app.add_typer(tune_app, name="tune")
 
 
 @app.callback()
@@ -192,6 +194,12 @@ def eval(
     badge_label: Optional[str] = typer.Option(
         None, "--badge-label", help="Override the badge label (default: '<domains> readiness')"
     ),
+    tune_framework: Optional[str] = typer.Option(
+        None, "--tune", help="Generate a SLAM framework config YAML (e.g. fast_lio, kiss_icp)"
+    ),
+    tune_output: Optional[str] = typer.Option(
+        None, "-o", "--output", help="Output YAML path or directory for --tune"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -234,6 +242,14 @@ def eval(
             with open(badge_output, "w") as f:
                 json.dump(eval_badge(report, label=badge_label), f, indent=2)
             console.print(f"Readiness badge saved to: [cyan]{badge_output}[/cyan]")
+        if tune_framework:
+            from bagx.tune import default_output_path, tune_report
+
+            yaml_text = tune_report(report, tune_framework)
+            out_path = default_output_path(tune_framework, tune_output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(yaml_text, encoding="utf-8")
+            console.print(f"Tuned config saved to: [cyan]{out_path}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
@@ -329,6 +345,33 @@ def rules_list() -> None:
     for plugin in plugins:
         table.add_row(plugin.name, plugin.source, plugin.description or "-")
     console.print(table)
+
+
+@tune_app.callback()
+def tune_main(
+    ctx: typer.Context,
+    list_frameworks: bool = typer.Option(False, "--list", help="List supported SLAM frameworks"),
+) -> None:
+    """Generate SLAM framework configs from bag metrics."""
+    if ctx.invoked_subcommand is not None:
+        return
+    if list_frameworks:
+        from rich.table import Table
+
+        from bagx.tune import discover_tuners, plugin_source_label as tuner_source_label
+
+        tuners = discover_tuners()
+        table = Table(title="SLAM Framework Tuners", show_header=True)
+        table.add_column("Name", style="bold")
+        table.add_column("Aliases")
+        table.add_column("Source")
+        for tuner in tuners:
+            aliases = ", ".join(tuner.aliases) if tuner.aliases else "-"
+            table.add_row(tuner.name, aliases, tuner_source_label(tuner))
+        console.print(table)
+        raise typer.Exit()
+    console.print(ctx.get_help())
+    raise typer.Exit()
 
 
 @domains_app.command("list")
