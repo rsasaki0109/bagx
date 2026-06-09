@@ -200,6 +200,9 @@ def eval(
     tune_output: Optional[str] = typer.Option(
         None, "-o", "--output", help="Output YAML path or directory for --tune"
     ),
+    html_output: Optional[str] = typer.Option(
+        None, "--html", help="Write a self-contained visual HTML report to this file"
+    ),
 ) -> None:
     """Evaluate quality of a single bag file.
 
@@ -250,11 +253,44 @@ def eval(
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(yaml_text, encoding="utf-8")
             console.print(f"Tuned config saved to: [cyan]{out_path}[/cyan]")
+        if html_output:
+            from bagx.report_html import write_eval_html
+
+            data = report.to_dict()
+            if severity_min:
+                data["findings"] = [
+                    f for f in data["findings"] if severity_at_least(f["severity"], severity_min)
+                ]
+            out_path = write_eval_html(data, html_output)
+            console.print(f"HTML report saved to: [cyan]{out_path}[/cyan]")
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error evaluating bag: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def report(
+    json_report: str = typer.Argument(..., help="Path to a bagx eval JSON report"),
+    html_output: Optional[str] = typer.Option(
+        None, "--html", help="Write a self-contained visual HTML report to this file"
+    ),
+) -> None:
+    """Convert a saved bagx eval JSON report into other formats."""
+    if not html_output:
+        console.print("[red]Error: specify --html <path> to render a visual report[/red]")
+        raise typer.Exit(2)
+
+    try:
+        from bagx.report_html import load_eval_report, write_eval_html
+
+        payload = load_eval_report(json_report)
+        out_path = write_eval_html(payload, html_output)
+        console.print(f"HTML report saved to: [cyan]{out_path}[/cyan]")
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
 

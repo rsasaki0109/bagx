@@ -16,7 +16,13 @@ bagx eval recording.db3 --badge badge.json      # emit a shields.io readiness ba
 bagx eval recording.db3 --tune fast_lio          # write FAST-LIO starting-point yaml
 bagx eval recording.db3 --tune kiss_icp -o cfg/ # write cfg/kiss_icp_tuned.yaml
 bagx tune --list                                # list supported frameworks
+bagx eval recording.db3 --html report.html      # self-contained visual report
+bagx report report.json --html report.html      # convert saved JSON to HTML
 ```
+
+`--html` writes a single offline-friendly HTML file (inline CSS + SVG, no CDN).
+Use it for Slack/email attachments or as a shareable readiness snapshot.
+Temporal findings with `time_range` appear as colored bands on the topic timeline.
 
 ### Output filtering
 
