@@ -57,6 +57,27 @@ Recommendations:
 
 Without bagx, you'd discover these issues *after* hours of failed SLAM runs.
 
+With `--tune`, bagx writes the SLAM config for you:
+
+```bash
+bagx eval ouster_os0-32.db3 --tune fast_lio    # → fast_lio_tuned.yaml
+bagx eval ouster_os0-32.db3 --tune kiss_icp -o cfg/
+bagx tune --list
+```
+
+Share a visual readiness snapshot with `--html` (offline-friendly, no CDN):
+
+```bash
+bagx eval your_bag.db3 --html report.html
+bagx report report.json --html report.html   # CI: save JSON, render HTML on failure
+```
+
+<p align="center">
+  <a href="docs/eval_report_demo.html">
+    <img src="docs/eval_report_preview.svg" alt="bagx HTML eval report preview" width="700">
+  </a>
+</p>
+
 For non-SLAM bags, the same workflow answers different questions:
 
 ```
@@ -100,7 +121,12 @@ Works **without ROS2** — reads `.db3` files directly via SQLite.
 | `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 | `bagx eval bag.db3 --rules rules.json` | Apply custom topic/type/rate/latency rules for your stack |
 | `bagx eval bag.db3 --badge badge.json` | Emit a shields.io readiness badge you can show in a README |
+| `bagx eval bag.db3 --tune fast_lio` | Generate a FAST-LIO / KISS-ICP starting-point YAML from bag metrics |
+| `bagx eval bag.db3 --html report.html` | Write a self-contained visual HTML readiness report |
+| `bagx report report.json --html out.html` | Convert a saved eval JSON into HTML (CI-friendly) |
 | `bagx rules list` | List discoverable built-in and installed custom-rule plugins |
+| `bagx domains list` | List built-in and installed domain detection plugins |
+| `bagx tune --list` | List supported SLAM framework tuners |
 
 ## Representative results
 
