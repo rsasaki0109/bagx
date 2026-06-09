@@ -9,6 +9,16 @@ import sqlite3
 import struct
 from pathlib import Path
 
+import numpy as np
+
+try:
+    from rosbags.rosbag1 import Writer as Rosbag1Writer
+    from rosbags.typesys import Stores, get_typestore
+
+    HAS_ROSBAGS = True
+except ImportError:
+    HAS_ROSBAGS = False
+
 
 def create_db3(path: Path, topics: list[dict], messages: list[dict]) -> Path:
     """Create a minimal rosbag2 .db3 file.
@@ -115,3 +125,105 @@ def build_imu_cdr(
     buf += struct.pack("<3d", *accel)
     buf += struct.pack("<9d", *([0.0] * 9))
     return buf
+
+
+def _ros1_typestore():
+    if not HAS_ROSBAGS:
+        raise RuntimeError("rosbags is required for ROS1 test helpers")
+    return get_typestore(Stores.ROS1_NOETIC)
+
+
+def create_ros1_bag(
+    path: Path,
+    topics: list[dict],
+    messages: list[dict],
+) -> Path:
+    """Create a minimal ROS1 .bag file using rosbags.
+
+    Args:
+        path: Output .bag path.
+        topics: List of {"name": str, "type": str}.
+        messages: List of {"topic": str, "timestamp_ns": int, "fields": dict}.
+            ``fields`` holds message field values for the supported types below.
+    """
+    if not HAS_ROSBAGS:
+        raise RuntimeError("rosbags is required for ROS1 test helpers")
+
+    typestore = _ros1_typestore()
+    types = typestore.types
+    Time = types["builtin_interfaces/msg/Time"]
+    Header = types["std_msgs/msg/Header"]
+    Vector3 = types["geometry_msgs/msg/Vector3"]
+    Quaternion = types["geometry_msgs/msg/Quaternion"]
+    NavSatStatus = types["sensor_msgs/msg/NavSatStatus"]
+    NavSatFix = types["sensor_msgs/msg/NavSatFix"]
+    Imu = types["sensor_msgs/msg/Imu"]
+    zero_cov = np.zeros(9, dtype=np.float64)
+
+    connections: dict[str, object] = {}
+    with Rosbag1Writer(path) as writer:
+        for topic_info in topics:
+            connections[topic_info["name"]] = writer.add_connection(
+                topic_info["name"],
+                topic_info["type"],
+                typestore=typestore,
+            )
+
+        for msg in messages:
+            topic = msg["topic"]
+            ts_ns = msg["timestamp_ns"]
+            fields = msg.get("fields", {})
+            msg_type = next(t["type"] for t in topics if t["name"] == topic)
+            stamp_sec = fields.get("stamp_sec", ts_ns // 1_000_000_000)
+            stamp_nanosec = fields.get("stamp_nanosec", ts_ns % 1_000_000_000)
+            stamp = Time(sec=stamp_sec, nanosec=stamp_nanosec)
+
+            if msg_type == "sensor_msgs/msg/NavSatFix":
+                header = Header(
+                    seq=fields.get("seq", 0),
+                    stamp=stamp,
+                    frame_id=fields.get("frame_id", "gps"),
+                )
+                status = NavSatStatus(
+                    status=fields.get("status", 0),
+                    service=fields.get("service", 1),
+                )
+                ros_msg = NavSatFix(
+                    header=header,
+                    status=status,
+                    latitude=fields.get("latitude", 0.0),
+                    longitude=fields.get("longitude", 0.0),
+                    altitude=fields.get("altitude", 0.0),
+                    position_covariance=fields.get("position_covariance", zero_cov),
+                    position_covariance_type=fields.get("position_covariance_type", 0),
+                )
+            elif msg_type == "sensor_msgs/msg/Imu":
+                header = Header(
+                    seq=fields.get("seq", 0),
+                    stamp=stamp,
+                    frame_id=fields.get("frame_id", "imu"),
+                )
+                accel = fields.get("linear_acceleration", (0.0, 0.0, 9.81))
+                gyro = fields.get("angular_velocity", (0.0, 0.0, 0.0))
+                orientation = fields.get("orientation", (0.0, 0.0, 0.0, 1.0))
+                ros_msg = Imu(
+                    header=header,
+                    orientation=Quaternion(
+                        x=orientation[0],
+                        y=orientation[1],
+                        z=orientation[2],
+                        w=orientation[3],
+                    ),
+                    orientation_covariance=zero_cov,
+                    angular_velocity=Vector3(x=gyro[0], y=gyro[1], z=gyro[2]),
+                    angular_velocity_covariance=zero_cov,
+                    linear_acceleration=Vector3(x=accel[0], y=accel[1], z=accel[2]),
+                    linear_acceleration_covariance=zero_cov,
+                )
+            else:
+                raise ValueError(f"Unsupported ROS1 test message type: {msg_type}")
+
+            raw = typestore.serialize_ros1(ros_msg, msg_type)
+            writer.write(connections[topic], ts_ns, raw)
+
+    return path

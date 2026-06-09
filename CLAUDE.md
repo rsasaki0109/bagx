@@ -22,7 +22,7 @@ eval / compare / sync / export / anomaly / scenario / ask / scene / info / batch
 CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 
 ## アーキテクチャ
-- `reader.py`: rosbag2_py → mcap → SQLiteフォールバック の3段階読み込み
+- `reader.py`: rosbag2_py → mcap → SQLite → ROS1(rosbags) の4段階読み込み
 - 各コマンドは独立モジュール (eval.py, compare.py, etc.)
 - CLIは `cli.py` (typer) に集約、各モジュールは遅延import
 - テスト用のダミー.db3は `tests/conftest.py` でSQLiteから直接生成
@@ -138,6 +138,14 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 | データセット | 検出 | 所見 |
 |---|---|---|
 | Franka Panda | ✅ | JointState検出、Duration 0sのbagはレートガードで対応 |
+
+### ROS1
+| データセット | Overall | 所見 |
+|---|---|---|
+| Synthetic GNSS (rosbags fixture) | — | NavSatFix 100msg、split bag 集約テスト済み |
+| Synthetic IMU (rosbags fixture) | — | Imu 200msg、eval パイプライン通過 |
+
+ROS1 実データ（EuRoC MH_01 / TUM VI）は `pip install bagx[ros1]` 後に `bagx eval <bag>` で検証可能。
 
 ## リリース手順
 1. `bagx/__init__.py` と `pyproject.toml` のバージョンを更新

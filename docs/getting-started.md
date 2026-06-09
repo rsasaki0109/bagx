@@ -10,6 +10,7 @@ pip install bagx
 
 ```bash
 pip install bagx[mcap]   # .mcap file support
+pip install bagx[ros1]    # ROS1 .bag support (pure Python via rosbags)
 pip install bagx[llm]    # LLM-powered ask command (Anthropic / OpenAI)
 ```
 
@@ -23,8 +24,9 @@ pip install -e ".[dev]"
 
 ## ROS2 dependency
 
-bagx works **with or without ROS2**:
+bagx works **with or without ROS**:
 
+- **ROS1 `.bag`**: `pip install bagx[ros1]` — pure Python via `rosbags` (no ROS install required)
 - **With ROS2**: Full message deserialization via `rosbag2_py`
 - **Without ROS2**: `.db3` files are read via SQLite with built-in CDR parsers for common types (NavSatFix, Imu, PoseStamped, Odometry, PointCloud2, TFMessage)
 

@@ -104,7 +104,11 @@ Recommendations:
 pip install bagx
 ```
 
-Works **without ROS2** — reads `.db3` files directly via SQLite.
+Works **without ROS** — reads ROS1 `.bag` and ROS2 `.db3`/`mcap` directly.
+
+```bash
+pip install bagx[ros1]   # ROS1 .bag support (pure Python via rosbags)
+```
 
 ## Commands
 

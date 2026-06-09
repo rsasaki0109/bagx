@@ -1,7 +1,7 @@
 """Rosbag reader abstraction layer.
 
 Wraps rosbag2_py to provide a clean interface for reading bag files.
-Supports both .db3 (SQLite) and .mcap formats.
+Supports ROS2 .db3/.mcap and ROS1 .bag formats.
 """
 
 from __future__ import annotations
@@ -39,6 +39,13 @@ try:
     HAS_MCAP = True
 except ImportError:
     HAS_MCAP = False
+
+try:
+    from rosbags.highlevel import AnyReader as RosbagsAnyReader
+
+    HAS_ROSBAGS = True
+except ImportError:
+    HAS_ROSBAGS = False
 
 
 @contextmanager
@@ -92,31 +99,65 @@ class BagSummary:
         return self.duration_ns / 1e9
 
 
+def _msg_object_to_dict(value) -> dict | list | str | int | float | bool | None:
+    """Convert a ROS message object (ROS2 or rosbags) to plain Python values."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {k: _msg_object_to_dict(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_msg_object_to_dict(item) for item in value]
+
+    # ROS2 messages use __slots__; rosbags messages use __annotations__.
+    if hasattr(value, "__slots__"):
+        result = {}
+        for slot in value.__slots__:
+            attr_name = slot.lstrip("_")
+            result[attr_name] = _msg_object_to_dict(getattr(value, attr_name))
+        return result
+
+    annotations = getattr(value, "__annotations__", None)
+    if annotations:
+        result = {}
+        for key in annotations:
+            if key.startswith("__"):
+                continue
+            result[key] = _msg_object_to_dict(getattr(value, key))
+        return result
+
+    return value
+
+
 def _ros_msg_to_dict(msg) -> dict:
     """Convert a ROS message object to a plain dict recursively."""
-    result = {}
-    for slot in msg.__slots__:
-        attr_name = slot.lstrip("_")
-        value = getattr(msg, attr_name)
-        if hasattr(value, "__slots__"):
-            result[attr_name] = _ros_msg_to_dict(value)
-        elif isinstance(value, (list, tuple)):
-            converted = []
-            for item in value:
-                if hasattr(item, "__slots__"):
-                    converted.append(_ros_msg_to_dict(item))
-                else:
-                    converted.append(item)
-            result[attr_name] = converted
-        elif isinstance(value, np.ndarray):
-            result[attr_name] = value.tolist()
-        else:
-            result[attr_name] = value
-    return result
+    return _msg_object_to_dict(msg)
+
+
+def _normalize_msg_data(msg_type: str, data: dict) -> dict:
+    """Align decoded message dicts with the SQLite/CDR parser field layout."""
+    if not isinstance(data, dict):
+        return data
+
+    header = data.get("header")
+    if isinstance(header, dict):
+        stamp = header.get("stamp")
+        if isinstance(stamp, dict):
+            data.setdefault("stamp_sec", stamp.get("sec", 0))
+            data.setdefault("stamp_nanosec", stamp.get("nanosec", 0))
+
+    if msg_type == "sensor_msgs/msg/NavSatFix":
+        status_val = data.get("status")
+        if isinstance(status_val, dict):
+            data["service"] = status_val.get("service", 0)
+            data["status"] = status_val.get("status", -1)
+
+    return data
 
 
 class BagReader:
-    """Unified reader for ROS2 bag files."""
+    """Unified reader for ROS1 and ROS2 bag files."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -127,8 +168,16 @@ class BagReader:
             self.path.is_dir() and any(self.path.glob("*.mcap"))
         )
         self._is_db3 = self.path.suffix == ".db3"
+        self._is_ros1 = self._detect_ros1_storage()
         self._summary: BagSummary | None = None
         self._decompressed_db3_paths: list[Path] | None = None
+
+    def _detect_ros1_storage(self) -> bool:
+        if self.path.suffix == ".bag":
+            return True
+        if not self.path.is_dir():
+            return False
+        return any(self.path.glob("*.bag"))
 
     def summary(self) -> BagSummary:
         if self._summary is not None:
@@ -136,6 +185,8 @@ class BagReader:
 
         if HAS_MCAP and self._is_mcap:
             self._summary = self._summary_mcap()
+        elif self._is_ros1 and HAS_ROSBAGS:
+            self._summary = self._summary_ros1()
         elif HAS_ROS:
             try:
                 self._summary = self._summary_ros()
@@ -151,10 +202,15 @@ class BagReader:
                     raise
         elif self._has_sqlite_storage():
             self._summary = self._summary_sqlite()
+        elif self._is_ros1:
+            raise RuntimeError(
+                "ROS1 .bag file detected but rosbags is not installed. "
+                "Install with: pip install bagx[ros1]"
+            )
         else:
             raise RuntimeError(
-                "rosbag2_py is not available and the bag is not a .db3/.mcap file. "
-                "Install ROS2, mcap packages, or provide a .db3 file."
+                "rosbag2_py is not available and the bag is not a supported format. "
+                "Install ROS2, mcap/ros1 extras, or provide a .db3/.mcap/.bag file."
             )
         return self._summary
 
@@ -163,6 +219,8 @@ class BagReader:
     ) -> Iterator[Message]:
         if HAS_MCAP and self._is_mcap:
             yield from self._read_mcap(topics)
+        elif self._is_ros1 and HAS_ROSBAGS:
+            yield from self._read_ros1(topics)
         elif HAS_ROS:
             try:
                 yield from self._read_ros(topics)
@@ -178,9 +236,14 @@ class BagReader:
                     raise
         elif self._has_sqlite_storage():
             yield from self._read_sqlite(topics)
+        elif self._is_ros1:
+            raise RuntimeError(
+                "ROS1 .bag file detected but rosbags is not installed. "
+                "Install with: pip install bagx[ros1]"
+            )
         else:
             raise RuntimeError(
-                "rosbag2_py is not available and the bag is not a .db3/.mcap file."
+                "rosbag2_py is not available and the bag is not a supported format."
             )
 
     # --- rosbag2_py backend ---
@@ -413,6 +476,100 @@ class BagReader:
                 yield Message(
                     topic=topic_name,
                     timestamp_ns=message.log_time,
+                    data=data,
+                )
+
+    # --- ROS1 backend (rosbags, no ROS required) ---
+
+    def _has_ros1_storage(self) -> bool:
+        return self._is_ros1
+
+    def _get_ros1_paths(self) -> list[Path]:
+        """Return ROS1 bag paths, including split-bag siblings when present."""
+        if self.path.suffix == ".bag":
+            paths = [self.path]
+            parent = self.path.parent
+            stem = self.path.stem
+            idx = 1
+            while True:
+                split_path = parent / f"{stem}_{idx}.bag"
+                if split_path.exists():
+                    paths.append(split_path)
+                    idx += 1
+                else:
+                    break
+            return paths
+
+        if self.path.is_dir():
+            bag_files = sorted(self.path.glob("*.bag"))
+            if bag_files:
+                return bag_files
+            raise FileNotFoundError(f"No .bag file found in {self.path}")
+
+        raise FileNotFoundError(f"ROS1 bag not found: {self.path}")
+
+    def _summary_ros1(self) -> BagSummary:
+        bag_paths = self._get_ros1_paths()
+        with RosbagsAnyReader(bag_paths) as reader:
+            topics: dict[str, TopicInfo] = {}
+            for connection in reader.connections:
+                topic_name = connection.topic
+                msg_type = connection.msgtype
+                count = connection.msgcount
+                if topic_name in topics:
+                    topics[topic_name] = TopicInfo(
+                        name=topic_name,
+                        type=msg_type,
+                        count=topics[topic_name].count + count,
+                        serialization_format="ros1",
+                    )
+                else:
+                    topics[topic_name] = TopicInfo(
+                        name=topic_name,
+                        type=msg_type,
+                        count=count,
+                        serialization_format="ros1",
+                    )
+
+            start_ns = reader.start_time
+            end_ns = reader.end_time
+            return BagSummary(
+                path=self.path,
+                duration_ns=reader.duration,
+                start_time_ns=start_ns,
+                end_time_ns=end_ns,
+                message_count=reader.message_count,
+                topics=topics,
+            )
+
+    def _read_ros1(
+        self, topics: list[str] | None
+    ) -> Iterator[Message]:
+        bag_paths = self._get_ros1_paths()
+        with RosbagsAnyReader(bag_paths) as reader:
+            connections = reader.connections
+            if topics:
+                connections = [c for c in connections if c.topic in topics]
+
+            for connection, timestamp_ns, raw_data in reader.messages(
+                connections=connections
+            ):
+                msg_type = connection.msgtype
+                try:
+                    decoded = reader.deserialize(raw_data, msg_type)
+                    data = _normalize_msg_data(
+                        msg_type, _msg_object_to_dict(decoded)
+                    )
+                except Exception:
+                    data = {
+                        "_raw_size": len(raw_data),
+                        "_msg_type": msg_type,
+                        "_parse_error": True,
+                    }
+
+                yield Message(
+                    topic=connection.topic,
+                    timestamp_ns=timestamp_ns,
                     data=data,
                 )
 
