@@ -140,12 +140,14 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 | Franka Panda | ✅ | JointState検出、Duration 0sのbagはレートガードで対応 |
 
 ### ROS1
-| データセット | Overall | 所見 |
-|---|---|---|
-| Synthetic GNSS (rosbags fixture) | — | NavSatFix 100msg、split bag 集約テスト済み |
-| Synthetic IMU (rosbags fixture) | — | Imu 200msg、eval パイプライン通過 |
+| データセット | Overall | IMU | Sync | 所見 |
+|---|---|---|---|---|
+| TUM VI calib-imu1 (`dataset-calib-imu1_512_16.bag`) | 95.4 | 90.8 | 100.0 | IMU 199Hz ✔, cam↔IMU sync 1.3ms ✔ |
+| Synthetic GNSS (rosbags fixture) | — | — | — | NavSatFix 100msg、split bag 集約テスト済み |
+| Synthetic IMU (rosbags fixture) | — | — | — | Imu 200msg、eval パイプライン通過 |
 
-ROS1 実データ（EuRoC MH_01 / TUM VI）は `pip install bagx[ros1]` 後に `bagx eval <bag>` で検証可能。
+EuRoC MH_01 は `robotics.ethz.ch` が不通の環境では ETH Research Collection から取得:
+`bagx eval MH_01_easy.bag`（`pip install bagx[ros1]` 必須）
 
 ## リリース手順
 1. `bagx/__init__.py` と `pyproject.toml` のバージョンを更新
