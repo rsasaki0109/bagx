@@ -1,0 +1,29 @@
+# PR readiness check using bagx-action (recommended)
+#
+# Copy to .github/workflows/bagx-pr-check.yml
+# Pair with bagx-action-baseline.yml on push to main.
+
+name: bagx PR readiness
+
+on:
+  pull_request:
+    paths:
+      - "**/*.db3"
+      - "**/*.mcap"
+      - ".github/workflows/bagx-pr-check.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rsasaki0109/bagx-action@v1
+        with:
+          bags: bag/recording.db3
+          fail-on: warning
+          comment: "true"

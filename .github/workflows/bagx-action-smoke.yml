@@ -1,0 +1,31 @@
+name: bagx-action smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  bagx-action-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bagx from this commit
+        run: pip install -e ".[dev]"
+
+      - name: Prepare CI benchmark fixtures
+        run: python scripts/prepare_ci_benchmark.py
+
+      - name: Run bagx-action benchmark smoke
+        uses: ./.github/actions/bagx
+        with:
+          bagx-version: ""
+          suite: .ci-benchmark/smoke_suite.json
+          fail-on: warning

@@ -63,6 +63,7 @@ nav:
       - batch — Batch Processing: guide/batch.md
       - benchmark — Benchmark Suites: guide/benchmark.md
       - diff — Compare Eval Reports: guide/diff.md
+      - github-action — CI Integration: guide/github-action.md
   - API Reference:
       - reader: api/reader.md
       - eval: api/eval.md

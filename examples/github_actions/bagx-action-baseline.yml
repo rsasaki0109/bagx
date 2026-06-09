@@ -1,0 +1,26 @@
+# Prime the bagx eval baseline cache on main (pair with bagx-action-pr.yml)
+
+name: bagx baseline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  prime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rsasaki0109/bagx-action@v1
+        with:
+          bags: bag/recording.db3
+          comment: "false"
+
+      - name: Save baseline eval JSON for PR diffs
+        run: cp .bagx-action/current.json .bagx-action/baseline.json
+
+      - uses: actions/cache/save@v4
+        with:
+          path: .bagx-action/baseline.json
+          key: bagx-eval-baseline-${{ github.sha }}

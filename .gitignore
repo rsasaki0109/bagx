@@ -26,6 +26,8 @@ env/
 export/
 site/
 .cache/
+.ci-benchmark/
+.bagx-action/
 
 # Local working notes (per-release plans, status snapshots).
 # Kept out of the repo; durable context lives in CLAUDE.md and the auto-memory.

@@ -257,6 +257,21 @@ JSON outputs now include `schema_version`, `report_type`, `bagx_version`, and st
 `findings`, so they are easier to gate in CI and compare across releases without depending
 on human-facing recommendation text.
 
+### GitHub Action
+
+Use [bagx-action](https://github.com/rsasaki0109/bagx-action) in CI instead of hand-written workflow steps:
+
+```yaml
+- uses: rsasaki0109/bagx-action@v1
+  with:
+    suite: benchmarks/my_suite.json
+    fail-on: warning
+```
+
+The action also posts PR readiness diffs (`bagx diff --format markdown`) and can publish
+shields.io badge JSON to a gist. See `examples/github_actions/` and
+[the CI guide](https://rsasaki0109.github.io/bagx/guide/github-action/).
+
 ### Readiness badge
 
 Turn any eval into a README badge with `--badge`:

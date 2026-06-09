@@ -1,0 +1,282 @@
+name: bagx
+description: Evaluate ROS bags with bagx — benchmark suites, PR readiness diffs, and shields.io badges.
+author: rsasaki0109
+
+branding:
+  icon: activity
+  color: blue
+
+inputs:
+  bagx-version:
+    description: pip install spec for bagx (e.g. '>=0.5.0'). Leave empty to use an already-installed bagx.
+    required: false
+    default: '>=0.5.0'
+  suite:
+    description: Path to a bagx benchmark manifest JSON file.
+    required: false
+    default: ''
+  bags:
+    description: Comma-separated bag paths to evaluate. The first bag is used for PR diff and badge output.
+    required: false
+    default: ''
+  baseline-path:
+    description: Baseline eval JSON for diff. When omitted on pull requests, restores from actions/cache keyed on the PR base SHA.
+    required: false
+    default: ''
+  fail-on:
+    description: Fail when findings reach this severity or higher (info, warning, error, critical).
+    required: false
+    default: warning
+  comment:
+    description: Post a sticky markdown diff comment on pull requests.
+    required: false
+    default: 'true'
+  comment-header:
+    description: Sticky PR comment header key (groups updates for the same check).
+    required: false
+    default: bagx-readiness
+  baseline-cache-key:
+    description: actions/cache key prefix for the baseline eval JSON on pull requests.
+    required: false
+    default: bagx-eval-baseline
+  badge-gist-id:
+    description: GitHub Gist ID to publish a shields.io endpoint badge JSON file.
+    required: false
+    default: ''
+  badge-file-name:
+    description: Filename inside the gist for the badge JSON.
+    required: false
+    default: badge.json
+  badge-label:
+    description: Override the shields.io badge label.
+    required: false
+    default: ''
+  badge-token:
+    description: Token with gist write access for badge publishing. Defaults to the workflow GITHUB_TOKEN.
+    required: false
+    default: ''
+  rules:
+    description: Custom rules file or plugin name passed to bagx eval/benchmark.
+    required: false
+    default: ''
+  working-directory:
+    description: Directory for generated reports (current.json, diff.md, badge.json).
+    required: false
+    default: .bagx-action
+  python-version:
+    description: Python version when bagx must be installed by this action.
+    required: false
+    default: '3.12'
+
+outputs:
+  report-path:
+    description: Path to the generated eval JSON report for the primary bag.
+    value: ${{ steps.outputs.outputs.report-path }}
+  benchmark-passed:
+    description: 'true when the benchmark suite passed (or no suite was run).'
+    value: ${{ steps.outputs.outputs.benchmark-passed }}
+  diff-markdown-path:
+    description: Path to the generated diff markdown, when produced.
+    value: ${{ steps.outputs.outputs.diff-markdown-path }}
+  badge-path:
+    description: Path to the generated shields.io badge JSON, when produced.
+    value: ${{ steps.outputs.outputs.badge-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      if: inputs.bagx-version != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install bagx
+      if: inputs.bagx-version != ''
+      shell: bash
+      run: pip install "bagx${{ inputs.bagx-version }}"
+
+    - name: Prepare working directory
+      id: prepare
+      shell: bash
+      run: |
+        set -euo pipefail
+        workdir="${{ inputs.working-directory }}"
+        mkdir -p "$workdir"
+        echo "workdir=$workdir" >> "$GITHUB_OUTPUT"
+
+    - name: Run benchmark suite
+      id: benchmark
+      if: inputs.suite != ''
+      shell: bash
+      env:
+        SUITE: ${{ inputs.suite }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        RULES: ${{ inputs.rules }}
+      run: |
+        set -euo pipefail
+        cmd=(bagx benchmark "$SUITE" --exit-on "$FAIL_ON")
+        if [ -n "$RULES" ]; then
+          cmd+=(--rules "$RULES")
+        fi
+        "${cmd[@]}"
+
+    - name: Evaluate bags
+      id: eval
+      if: inputs.bags != ''
+      shell: bash
+      env:
+        BAGS: ${{ inputs.bags }}
+        WORKDIR: ${{ steps.prepare.outputs.workdir }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        RULES: ${{ inputs.rules }}
+        BADGE_LABEL: ${{ inputs.badge-label }}
+        BADGE_GIST_ID: ${{ inputs.badge-gist-id }}
+      run: |
+        set -euo pipefail
+        primary="$(echo "$BAGS" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        if [ -z "$primary" ]; then
+          echo "bags input is empty after parsing" >&2
+          exit 1
+        fi
+        report_path="$WORKDIR/current.json"
+        badge_path="$WORKDIR/badge.json"
+        eval_cmd=(bagx eval "$primary" --json "$report_path" --severity-min "$FAIL_ON")
+        if [ -n "$RULES" ]; then
+          eval_cmd+=(--rules "$RULES")
+        fi
+        if [ -n "$BADGE_GIST_ID" ]; then
+          eval_cmd+=(--badge "$badge_path")
+          if [ -n "$BADGE_LABEL" ]; then
+            eval_cmd+=(--badge-label "$BADGE_LABEL")
+          fi
+        fi
+        "${eval_cmd[@]}"
+        echo "primary_bag=$primary" >> "$GITHUB_OUTPUT"
+        echo "report_path=$report_path" >> "$GITHUB_OUTPUT"
+        if [ -n "$BADGE_GIST_ID" ] && [ -f "$badge_path" ]; then
+          echo "badge_path=$badge_path" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Restore baseline eval from cache
+      id: baseline_cache
+      if: inputs.bags != '' && inputs.baseline-path == '' && github.event_name == 'pull_request'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.prepare.outputs.workdir }}/baseline.json
+        key: ${{ inputs.baseline-cache-key }}-${{ github.event.pull_request.base.sha }}
+        restore-keys: |
+          ${{ inputs.baseline-cache-key }}-
+
+    - name: Compare against baseline
+      id: diff
+      if: inputs.bags != ''
+      shell: bash
+      env:
+        WORKDIR: ${{ steps.prepare.outputs.workdir }}
+        BASELINE_PATH: ${{ inputs.baseline-path }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        CACHE_HIT: ${{ steps.baseline_cache.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        diff_path="$WORKDIR/diff.md"
+        baseline=""
+        if [ -n "$BASELINE_PATH" ]; then
+          baseline="$BASELINE_PATH"
+        elif [ "${CACHE_HIT:-}" = "true" ]; then
+          baseline="$WORKDIR/baseline.json"
+        fi
+
+        if [ -n "$baseline" ] && [ -f "$baseline" ]; then
+          bagx diff "$baseline" "$WORKDIR/current.json" \
+            --format markdown \
+            --output "$diff_path" \
+            --exit-on "$FAIL_ON"
+        else
+          {
+            echo "### bagx findings diff"
+            echo
+            echo "_No baseline eval JSON available — skipping diff._"
+            echo
+            echo "Prime a baseline by running \`bagx eval --json baseline.json\` on push to main and caching it with key \`${{ inputs.baseline-cache-key }}-\${{ github.sha }}\`."
+          } > "$diff_path"
+        fi
+        echo "diff_path=$diff_path" >> "$GITHUB_OUTPUT"
+
+    - name: Comment diff on pull request
+      if: inputs.comment == 'true' && inputs.bags != '' && github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        path: ${{ steps.diff.outputs.diff_path }}
+        header: ${{ inputs.comment-header }}
+
+    - name: Publish badge to gist
+      if: inputs.badge-gist-id != '' && steps.eval.outputs.badge_path != ''
+      shell: bash
+      env:
+        GIST_ID: ${{ inputs.badge-gist-id }}
+        BADGE_PATH: ${{ steps.eval.outputs.badge_path }}
+        BADGE_FILE: ${{ inputs.badge-file-name }}
+        GITHUB_TOKEN: ${{ inputs.badge-token != '' && inputs.badge-token || github.token }}
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json
+        import os
+        import sys
+        import urllib.request
+
+        gist_id = os.environ["GIST_ID"]
+        badge_path = os.environ["BADGE_PATH"]
+        badge_file = os.environ["BADGE_FILE"]
+        token = os.environ["GITHUB_TOKEN"]
+
+        with open(badge_path, encoding="utf-8") as f:
+            content = f.read()
+
+        payload = json.dumps({"files": {badge_file: {"content": content}}}).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{gist_id}",
+            data=payload,
+            method="PATCH",
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                resp.read()
+        except urllib.error.HTTPError as exc:
+            print(exc.read().decode(), file=sys.stderr)
+            raise SystemExit(exc.code) from exc
+        PY
+
+    - name: Set action outputs
+      id: outputs
+      if: always()
+      shell: bash
+      env:
+        REPORT_PATH: ${{ steps.eval.outputs.report_path }}
+        DIFF_PATH: ${{ steps.diff.outputs.diff_path }}
+        BADGE_PATH: ${{ steps.eval.outputs.badge_path }}
+        SUITE: ${{ inputs.suite }}
+      run: |
+        set -euo pipefail
+        if [ -n "$REPORT_PATH" ]; then
+          echo "report-path=$REPORT_PATH" >> "$GITHUB_OUTPUT"
+        fi
+        if [ -n "$DIFF_PATH" ]; then
+          echo "diff-markdown-path=$DIFF_PATH" >> "$GITHUB_OUTPUT"
+        fi
+        if [ -n "$BADGE_PATH" ]; then
+          echo "badge-path=$BADGE_PATH" >> "$GITHUB_OUTPUT"
+        fi
+        if [ -z "$SUITE" ]; then
+          echo "benchmark-passed=true" >> "$GITHUB_OUTPUT"
+        elif [ "${{ steps.benchmark.outcome }}" = "success" ]; then
+          echo "benchmark-passed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "benchmark-passed=false" >> "$GITHUB_OUTPUT"
+        fi
