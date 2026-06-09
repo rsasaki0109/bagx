@@ -247,6 +247,7 @@ sync, IMU noise, and stack-specific topic coverage (Nav2 / Autoware / MoveIt / p
 
 ## Analysis articles
 
+- [Why EuRoC MH_01_easy IMU looks noisy](scoreboard/why-euroc-mh01-imu-is-noisy.md)
 - [Why Ouster OS0-32 scores 77](scoreboard/why-ouster-os0-32-scores-77.md)
 - [Why NTU VIRAL IMU looks noisy](scoreboard/why-ntu-viral-imu-is-noisy.md)
 - [Why Autoware all-sensors-bag4 scores 72](scoreboard/why-autoware-all-sensors-scores-72.md)

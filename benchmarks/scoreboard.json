@@ -111,16 +111,16 @@
       "source_url": "https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/MH_01_easy.bag",
       "reproduce": "pip install bagx[ros1] && bagx eval MH_01_easy.bag",
-      "download_hint": "Download from ETH Research Collection if robotics.ethz.ch is unreachable.",
+      "download_hint": "HF mirror: huggingface-cli download kavehsgh/EuRoC_MAV_Dataset_Machine_Hall_Easy_01 --local-dir euroc_mh01 (or ETH Research Collection).",
       "results": {
-        "overall_score": null,
-        "imu_score": null,
-        "sync_score": null,
+        "overall_score": 60.32672074858402,
+        "imu_score": 23.05074576699423,
+        "sync_score": 97.60269573017382,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "Pending download \u2014 classic VIO benchmark (ROS1 .bag)",
-        "bagx_version": null,
-        "evaluated_at": null
+        "key_finding": "WARNING IMU accel noise 0.7935 m/s\u00b2 \u2014 noisy, LiDAR-only odometry may outperform LIO",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
       }
     },
     {
@@ -131,14 +131,14 @@
       "source_url": "https://github.com/IPNL-POLYU/UrbanNavDataset",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/UrbanNav-HK_TST-20210517_sensors.bag",
       "reproduce": "pip install bagx[ros1] && bagx eval UrbanNav-HK_TST-20210517_sensors.bag",
-      "download_hint": "Dropbox link in UrbanNavDataset README (ROS1 .bag with LiDAR, cameras, GNSS/INS).",
+      "download_hint": "Dropbox link in UrbanNavDataset README (~35GB ROS1 .bag; manual download required).",
       "results": {
         "overall_score": null,
         "imu_score": null,
         "sync_score": null,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "Pending download \u2014 urban canyon GNSS + LiDAR fusion bag",
+        "key_finding": "Pending download (~35GB) \u2014 urban canyon GNSS + LiDAR fusion bag",
         "bagx_version": null,
         "evaluated_at": null
       }
@@ -167,18 +167,18 @@
       "name": "m2dgr-urban",
       "display_name": "M2DGR (urban street)",
       "domain": "SLAM",
-      "ros": "ros2",
+      "ros": "ros1",
       "source_url": "https://github.com/SJTU-ViSYS/M2DGR",
-      "bag_path": "${BAGX_SCOREBOARD_BAGS}/m2dgr_urban.db3",
-      "reproduce": "bagx eval m2dgr_urban.db3",
-      "download_hint": "Clone M2DGR and export/play urban street sequences as rosbag2.",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/street_03.bag",
+      "reproduce": "pip install bagx[ros1] && bagx eval street_03.bag",
+      "download_hint": "street_03 (~21GB) from M2DGR OneDrive links in README; HF mirror has no bag files.",
       "results": {
         "overall_score": null,
         "imu_score": null,
         "sync_score": null,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "Pending download \u2014 multi-sensor GNSS/IMU/LiDAR urban dataset",
+        "key_finding": "Pending download (~21GB) \u2014 multi-sensor GNSS/IMU/LiDAR urban dataset",
         "bagx_version": null,
         "evaluated_at": null
       }
@@ -331,16 +331,16 @@
       "source_url": "https://huggingface.co/datasets/okritvik/TurtleBot3_Walker",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/turtlebot3_walker",
       "reproduce": "bagx eval turtlebot3_walker",
-      "download_hint": "huggingface-cli download okritvik/TurtleBot3_Walker",
+      "download_hint": "HF dataset 404; use scripts/run_ros_dogfood.py nav2-gazebo or sakshikakde/turtlebot3_walker GDrive bag.",
       "results": {
-        "overall_score": null,
-        "imu_score": null,
+        "overall_score": 100.0,
+        "imu_score": 100.0,
         "sync_score": null,
         "gnss_score": null,
-        "domain_score": null,
-        "key_finding": "Pending eval \u2014 Nav2 Walker bag (odom, scan, cmd_vel)",
-        "bagx_version": null,
-        "evaluated_at": null
+        "domain_score": 100.0,
+        "key_finding": "Pipeline scan \u2192 costmap: 43ms median, 82ms P95",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
       }
     },
     {
@@ -411,16 +411,16 @@
       "source_url": "https://huggingface.co/datasets/adriankobras/panda",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/panda",
       "reproduce": "bagx eval panda",
-      "download_hint": "huggingface-cli download adriankobras/panda",
+      "download_hint": "HF dataset 404; score via scripts/run_ros_dogfood.py moveit-demo capture or any MoveIt joint_states bag.",
       "results": {
-        "overall_score": null,
+        "overall_score": 100.0,
         "imu_score": null,
         "sync_score": null,
         "gnss_score": null,
-        "domain_score": null,
-        "key_finding": "Pending eval \u2014 Franka Panda MoveIt demonstration bag",
-        "bagx_version": null,
-        "evaluated_at": null
+        "domain_score": 100.0,
+        "key_finding": "Pipeline joint_states \u2192 planned_path: 6ms median, 6ms P95 (1 sample)",
+        "bagx_version": "0.6.0",
+        "evaluated_at": "2026-06-10"
       }
     },
     {
@@ -591,14 +591,14 @@
       "source_url": "https://github.com/weisongwen/UrbanLoco",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/UrbanLoco_Alameda.bag",
       "reproduce": "pip install bagx[ros1] && bagx eval UrbanLoco_Alameda.bag",
-      "download_hint": "UrbanLoco dataset \u2014 download ROS1 bags from project page.",
+      "download_hint": "UrbanLoco project page \u2014 Alameda sequence is multi-GB; smaller CAColiTower still ~10GB.",
       "results": {
         "overall_score": null,
         "imu_score": null,
         "sync_score": null,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "Pending download \u2014 long urban GNSS/IMU/LiDAR sequence",
+        "key_finding": "Pending download (multi-GB) \u2014 long urban GNSS/IMU/LiDAR sequence",
         "bagx_version": null,
         "evaluated_at": null
       }
