@@ -10,6 +10,9 @@
 bagx answers a practical question: can this bag be used for SLAM, navigation,
 perception, manipulation, Autoware validation, or your custom robot stack?
 
+> **[Try bagx in your browser](https://rsasaki0109.github.io/bagx/demo/)** — drop a `.db3` bag,
+> no install, your bag never leaves your machine.
+
 ```bash
 pip install bagx
 bagx eval your_bag.db3

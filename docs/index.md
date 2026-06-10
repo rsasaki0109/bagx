@@ -2,6 +2,9 @@
 
 **Post-processing analysis engine for ROS2 rosbag data.**
 
+> **[Try bagx in your browser](https://rsasaki0109.github.io/bagx/demo/)** — drop a `.db3` bag,
+> get a readiness report. No install, and your bag never leaves your machine.
+
 > bagx is not a replacement for ros2 bag.
 > ros2 bag handles recording & playback (I/O). bagx handles evaluation, understanding & comparison (Analysis).
 
