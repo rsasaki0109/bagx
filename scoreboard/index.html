@@ -1,0 +1,1763 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Post-processing analysis engine for ROS2 rosbag data">
+      
+      
+      
+        <link rel="canonical" href="https://rsasaki0109.github.io/bagx/scoreboard/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../getting-started/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Scoreboard - bagx</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#public-dataset-scoreboard" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="bagx" class="md-header__button md-logo" aria-label="bagx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bagx
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Scoreboard
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/rsasaki0109/bagx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rsasaki0109/bagx
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="bagx" class="md-nav__button md-logo" aria-label="bagx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    bagx
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/rsasaki0109/bagx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rsasaki0109/bagx
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://rsasaki0109.github.io/bagx/demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Try in Browser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scoreboard
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scoreboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#analysis-articles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis articles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproduce-a-row" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproduce a row
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reproduce a row">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sample-commands-by-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sample commands by domain
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    eval — Quality Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/custom-rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    custom-rules — Custom Message Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/domain-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    domain-plugins — Stack Detection Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/compare/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    compare — Bag Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sync — Sync Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    export — Data Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/anomaly/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    anomaly — Anomaly Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/scenario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scenario — Scene Extraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/ask/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ask — LLM Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mcp — MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/scene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scene — 3D State
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/batch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    batch — Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/benchmark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmark — Benchmark Suites
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/diff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diff — Compare Eval Reports
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/github-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    github-action — CI Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/reader/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reader
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    eval
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/compare/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    compare
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/benchmark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmark
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/anomaly/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    anomaly
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/scenario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scenario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/scene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#analysis-articles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis articles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproduce-a-row" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproduce a row
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reproduce a row">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sample-commands-by-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sample commands by domain
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="public-dataset-scoreboard">Public Dataset Scoreboard<a class="headerlink" href="#public-dataset-scoreboard" title="Permanent link">&para;</a></h1>
+<p>bagx scores public rosbag datasets with a single command (<code>bagx eval</code>). This page is
+<strong>generated from</strong> <a href="https://github.com/rsasaki0109/bagx/blob/main/benchmarks/scoreboard.json"><code>benchmarks/scoreboard.json</code></a>
+so scores stay reproducible across releases.</p>
+<p>Scores are <strong>readiness hints</strong>, not SLAM trajectory accuracy. They summarize sensor rates,
+sync, IMU noise, and stack-specific topic coverage (Nav2 / Autoware / MoveIt / perception).</p>
+<h2 id="analysis-articles">Analysis articles<a class="headerlink" href="#analysis-articles" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="why-euroc-mh01-imu-is-noisy/">Why EuRoC MH_01_easy IMU looks noisy</a></li>
+<li><a href="why-ouster-os0-32-scores-77/">Why Ouster OS0-32 scores 77</a></li>
+<li><a href="why-ntu-viral-imu-is-noisy/">Why NTU VIRAL IMU looks noisy</a></li>
+<li><a href="why-autoware-all-sensors-scores-72/">Why Autoware all-sensors-bag4 scores 72</a></li>
+</ul>
+<!-- SCOREBOARD_TABLE_START -->
+
+<p><strong>30 public datasets</strong> tracked · <strong>26 scored</strong> · bagx 0.6.0</p>
+<table>
+<thead>
+<tr>
+<th>Dataset</th>
+<th>Domain</th>
+<th>ROS</th>
+<th>Overall</th>
+<th>IMU</th>
+<th>Sync</th>
+<th>Key finding</th>
+<th>bagx</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets">EuRoC MH_01_easy</a></td>
+<td>SLAM</td>
+<td>ros1</td>
+<td><strong>60.3</strong></td>
+<td>23.1</td>
+<td>97.6</td>
+<td>WARNING IMU accel noise 0.7935 m/s² — noisy, LiDAR-only odometry may outperform LIO</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://hilti-challenge.com/dataset-2022.html">Hilti SLAM Challenge 2022</a></td>
+<td>SLAM</td>
+<td>ros2</td>
+<td><strong>—</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pending download — construction-site LiDAR+IMU benchmark</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="https://www.livoxtech.com/mid-360">Livox MID-360</a></td>
+<td>SLAM</td>
+<td>ros2</td>
+<td><strong>83.7</strong></td>
+<td>97.3</td>
+<td>70.0</td>
+<td>IMU is excellent but LiDAR↔IMU sync ~25ms — enable deskew</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/SJTU-ViSYS/M2DGR">M2DGR (urban street)</a></td>
+<td>SLAM</td>
+<td>ros1</td>
+<td><strong>—</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pending download (~21GB) — multi-sensor GNSS/IMU/LiDAR urban dataset</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ntu-aris/ntu_viral_dataset">NTU VIRAL (drone)</a></td>
+<td>SLAM</td>
+<td>ros2</td>
+<td><strong>79.8</strong></td>
+<td>59.5</td>
+<td>100.0</td>
+<td>Noisy IMU — LiDAR-only SLAM (e.g. KISS-ICP) recommended</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://ori-drs.github.io/newer_college_dataset/">Newer College (handheld)</a></td>
+<td>SLAM</td>
+<td>ros2</td>
+<td><strong>92.3</strong></td>
+<td>84.5</td>
+<td>100.0</td>
+<td>LiDAR+IMU quality is strong enough for SLAM benchmarking</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://data.ouster.io/">Ouster OS0-32 (static)</a></td>
+<td>SLAM</td>
+<td>ros2</td>
+<td><strong>76.6</strong></td>
+<td>79.6</td>
+<td>73.6</td>
+<td>50Hz IMU is slow for deskew; sync margin is thin</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://cvg.cit.tum.de/tumvi/dataset/calibration">TUM VI calib-imu1</a></td>
+<td>SLAM</td>
+<td>ros1</td>
+<td><strong>95.4</strong></td>
+<td>90.8</td>
+<td>100.0</td>
+<td>IMU accel noise 0.0515 m/s² — good for LIO, set imu_acc_noise_density to 0.0515</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/weisongwen/UrbanLoco">UrbanLoco (Alameda)</a></td>
+<td>SLAM</td>
+<td>ros1</td>
+<td><strong>—</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pending download (multi-GB) — long urban GNSS/IMU/LiDAR sequence</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="https://github.com/IPNL-POLYU/UrbanNavDataset">UrbanNav HK TST</a></td>
+<td>SLAM</td>
+<td>ros1</td>
+<td><strong>—</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pending download (~35GB) — urban canyon GNSS + LiDAR fusion bag</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">AutoCore Ouster OS1-64</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>100.0</strong></td>
+<td>—</td>
+<td>—</td>
+<td>LiDAR (/sensing/lidar/top/rectified/pointcloud) at 10Hz</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware all-sensors-bag1</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>90.2</strong></td>
+<td>85.8</td>
+<td>75.1</td>
+<td>GNSS fix rate 100% — suitable as ground truth reference</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware all-sensors-bag2</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>86.1</strong></td>
+<td>69.8</td>
+<td>74.6</td>
+<td>GNSS fix rate 100% — suitable as ground truth reference</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware all-sensors-bag3</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>81.7</strong></td>
+<td>78.7</td>
+<td>59.0</td>
+<td>GNSS fix rate 100% — suitable as ground truth reference</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware all-sensors-bag4</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>72.2</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Sensing/localization-only bag — planning/control topics absent</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware all-sensors-bag5</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>84.5</strong></td>
+<td>77.9</td>
+<td>64.5</td>
+<td>GNSS fix rate 100% — suitable as ground truth reference</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware all-sensors-bag6</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>77.0</strong></td>
+<td>40.3</td>
+<td>69.9</td>
+<td>GNSS fix rate 100% — suitable as ground truth reference</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware driving_20_kmh</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>99.0</strong></td>
+<td>—</td>
+<td>—</td>
+<td>LiDAR packets and /vehicle/status/velocity_status at healthy rates</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://autowarefoundation.github.io/autoware-documentation/main/datasets/">Autoware driving_30_kmh</a></td>
+<td>Autoware</td>
+<td>ros2</td>
+<td><strong>98.9</strong></td>
+<td>—</td>
+<td>97.9</td>
+<td>Sensor sync good (8.4ms)</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rsasaki0109/bagx">Nav2 Gazebo (deep capture)</a></td>
+<td>Nav2</td>
+<td>ros2</td>
+<td><strong>100.0</strong></td>
+<td>100.0</td>
+<td>—</td>
+<td>Pipeline scan → costmap: 43ms median, 82ms P95</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rsasaki0109/bagx">Nav2 Gazebo (goal capture)</a></td>
+<td>Nav2</td>
+<td>ros2</td>
+<td><strong>88.6</strong></td>
+<td>100.0</td>
+<td>77.1</td>
+<td>IMU accel noise 0.0170 m/s² — excellent, set imu_acc_noise_density to 0.0170</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rsasaki0109/bagx">Nav2 Gazebo (headless)</a></td>
+<td>Nav2</td>
+<td>ros2</td>
+<td><strong>100.0</strong></td>
+<td>100.0</td>
+<td>—</td>
+<td>Control command (/cmd_vel) at 10Hz — good for control-loop observability</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/datasets/okritvik/TurtleBot3_Walker">TurtleBot3 Walker</a></td>
+<td>Nav2</td>
+<td>ros2</td>
+<td><strong>100.0</strong></td>
+<td>100.0</td>
+<td>—</td>
+<td>Pipeline scan → costmap: 43ms median, 82ms P95</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/datasets/adriankobras/panda">Franka Panda (MoveIt)</a></td>
+<td>MoveIt</td>
+<td>ros2</td>
+<td><strong>100.0</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pipeline joint_states → planned_path: 6ms median, 6ms P95 (1 sample)</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rsasaki0109/bagx">MoveIt execution capture</a></td>
+<td>MoveIt</td>
+<td>ros2</td>
+<td><strong>100.0</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pipeline joint_states → planned_path: 6ms median, 6ms P95 (1 sample)</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rsasaki0109/bagx">MoveIt plan-only capture</a></td>
+<td>MoveIt</td>
+<td>ros2</td>
+<td><strong>66.7</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Pipeline joint_states → planned_path: 9ms median, 9ms P95 (1 sample)</td>
+<td>0.6.0</td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim">NVIDIA r2b_galileo</a></td>
+<td>Perception</td>
+<td>ros2</td>
+<td><strong>90.5</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Eight camera streams + IMU + chassis odom time-aligned</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim">NVIDIA r2b_galileo2</a></td>
+<td>Perception</td>
+<td>ros2</td>
+<td><strong>95.3</strong></td>
+<td>—</td>
+<td>—</td>
+<td>RGB-D + infra + camera_info — reusable for perception export</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim">NVIDIA r2b_whitetunnel</a></td>
+<td>Perception</td>
+<td>ros2</td>
+<td><strong>91.3</strong></td>
+<td>—</td>
+<td>—</td>
+<td>Multi-camera + IMU; noisy accel flagged but perception coverage solid</td>
+<td>0.4.0</td>
+</tr>
+<tr>
+<td><a href="https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim">NVIDIA r2b_robotarm</a></td>
+<td>Manipulation</td>
+<td>ros2</td>
+<td><strong>96.0</strong></td>
+<td>—</td>
+<td>—</td>
+<td>RGB-D + joint_states suitable for arm perception benchmarking</td>
+<td>0.4.0</td>
+</tr>
+</tbody>
+</table>
+<!-- SCOREBOARD_TABLE_END -->
+
+<h2 id="reproduce-a-row">Reproduce a row<a class="headerlink" href="#reproduce-a-row" title="Permanent link">&para;</a></h2>
+<p>Each manifest entry includes a <code>reproduce</code> command. Example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BAGX_SCOREBOARD_BAGS</span><span class="o">=</span>/path/to/downloaded/bags
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># also accepts BAGX_REALBAGS for NVIDIA / Autoware mirrors</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>bagx<span class="w"> </span><span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$BAGX_SCOREBOARD_BAGS</span><span class="s2">/r2b_galileo2&quot;</span>
+</code></pre></div>
+<p>Refresh the table after downloading bags:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BAGX_SCOREBOARD_BAGS</span><span class="o">=</span>/path/to/bags
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>python<span class="w"> </span>scripts/generate_scoreboard.py<span class="w"> </span>--refresh<span class="w"> </span>--write-manifest
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>python<span class="w"> </span>scripts/generate_scoreboard.py
+</code></pre></div>
+<p>Manifest: <a href="https://github.com/rsasaki0109/bagx/blob/main/benchmarks/scoreboard.json"><code>benchmarks/scoreboard.json</code></a></p>
+<h3 id="sample-commands-by-domain">Sample commands by domain<a class="headerlink" href="#sample-commands-by-domain" title="Permanent link">&para;</a></h3>
+<p><strong>SLAM</strong></p>
+<ul>
+<li>Newer College (handheld): <code>bagx eval newer_college.db3</code></li>
+<li>Livox MID-360: <code>bagx eval livox_mid360.db3</code></li>
+</ul>
+<p><strong>Autoware</strong></p>
+<ul>
+<li>Autoware all-sensors-bag4: <code>aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag4_compressed/ ./all-sensors-bag4_compressed --no-sign-request &amp;&amp; bagx eval all-sensors-bag4_compressed</code></li>
+<li>Autoware driving_20_kmh: <code>aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_20_kmh_2022_06_10-16_01_55_compressed/ ./driving_20 --no-sign-request &amp;&amp; bagx eval driving_20</code></li>
+</ul>
+<p><strong>Nav2</strong></p>
+<ul>
+<li>TurtleBot3 Walker: <code>bagx eval turtlebot3_walker</code></li>
+<li>Nav2 Gazebo (deep capture): <code>python scripts/run_ros_dogfood.py nav2-gazebo &amp;&amp; bagx eval &lt;captured_bag&gt;</code></li>
+</ul>
+<p><strong>MoveIt</strong></p>
+<ul>
+<li>Franka Panda (MoveIt): <code>bagx eval panda</code></li>
+<li>MoveIt execution capture: <code>python scripts/run_ros_dogfood.py moveit-demo &amp;&amp; bagx eval &lt;captured_bag&gt;</code></li>
+</ul>
+<p><strong>Perception</strong></p>
+<ul>
+<li>NVIDIA r2b_galileo: <code>bagx eval r2b_galileo</code></li>
+<li>NVIDIA r2b_whitetunnel: <code>bagx eval r2b_whitetunnel</code></li>
+</ul>
+<p><strong>Manipulation</strong></p>
+<ul>
+<li>NVIDIA r2b_robotarm: <code>bagx eval r2b_robotarm</code></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
