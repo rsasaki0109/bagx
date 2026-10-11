@@ -87,5 +87,9 @@ fail_under = 80
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint]
+# Pin the rule set: ruff 0.16 widened its defaults, which would fail CI on unchanged code.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/test_mcap.py" = ["E402"]
