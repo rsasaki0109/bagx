@@ -171,7 +171,7 @@ def _pick_lidar_topic(report: "EvalReport") -> str | None:
     topics = report.topic_info
     if not topics:
         return None
-    from bagx.eval import _select_topics
+    from bagx.eval_topics import _select_topics
 
     candidates = _select_topics(
         topics,
@@ -188,7 +188,7 @@ def _pick_imu_topic(report: "EvalReport") -> str | None:
     if report.imu_topic:
         return report.imu_topic
     topics = report.topic_info
-    from bagx.eval import _select_topics
+    from bagx.eval_topics import _select_topics
 
     candidates = _select_topics(
         topics,

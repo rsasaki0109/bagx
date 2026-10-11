@@ -86,7 +86,7 @@ def _builtin_plugins() -> list[DomainPlugin]:
     Imports are deferred so :mod:`bagx.eval` can import this module without
     creating a circular dependency.
     """
-    from bagx.eval import (
+    from bagx.eval_topics import (
         _has_control_signature,
         _has_nav2_signature,
         _select_topics,
