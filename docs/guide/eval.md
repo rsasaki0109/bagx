@@ -83,6 +83,31 @@ Host the file somewhere reachable by URL and reference it from a README:
 ### Overall Score
 Weighted average of available component scores (GNSS, IMU, Sync).
 
+### TF tree and message content
+
+These checks add findings and recommendations but **do not change the score**.
+
+- **TF tree** (`tf.*`, category `tf_tree`, `TF:` prefix): see [tf](tf.md).
+- **Message content** (`msg.*`, category `message_content`, `Data:` prefix). These work
+  without ROS: the SQLite fallback parses LaserScan / CameraInfo / Image /
+  CompressedImage / JointState from CDR.
+
+| Finding id | Severity | Meaning |
+|------------|----------|---------|
+| `msg.scan_no_valid_ranges.<topic>` | error | Every scan has zero returns within `[range_min, range_max]` |
+| `msg.scan_low_valid_ranges.<topic>` | warning | On average < 50% of returns are within range |
+| `msg.scan_config.<topic>` | error | `angle_increment == 0` or `range_max <= range_min` |
+| `msg.scan_beam_count_changes.<topic>` | warning | Beam count changes during the bag (two publishers, driver restart) |
+| `msg.camera_uncalibrated.<topic>` | warning | `camera_info` has an empty intrinsic matrix K |
+| `msg.camera_info_zero_size.<topic>` | warning | `camera_info` width or height is 0 |
+| `msg.camera_info_size_mismatch.<topic>` | warning | `camera_info` size differs from the Image in the same namespace |
+| `msg.image_size_mismatch.<topic>` | error | Image data length != `step × height` (truncated or mislabelled) |
+| `msg.image_format_changes.<topic>` | warning | Resolution or encoding changes during the bag |
+| `msg.joint_state_name_set_changes.<topic>` | warning | Different joint sets on one topic (several publishers) |
+| `msg.joint_state_length_mismatch.<topic>` | error | `position` length != `name` length |
+| `msg.joint_state_nan.<topic>` | warning | NaN joint positions |
+| `msg.empty_frame_id.<topic>` | warning | Scan / camera_info / image with an empty `header.frame_id` |
+
 ## Structured findings
 
 `bagx eval --json` includes a machine-readable `findings` array alongside the

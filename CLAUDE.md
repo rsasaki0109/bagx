@@ -52,6 +52,12 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 - geometry_msgs/msg/TwistStamped
 - tf2_msgs/msg/TFMessage
 - std_msgs/msg/Header
+- sensor_msgs/msg/LaserScan (ranges は保持せず num_ranges / num_valid_ranges に集約)
+- sensor_msgs/msg/CameraInfo
+- sensor_msgs/msg/Image / CompressedImage (メタデータのみ、画素は data_size だけ)
+- sensor_msgs/msg/JointState
+
+新しいパーサーは `_CdrCursor`（アラインメントは payload 先頭基準、画像ペイロードはコピーしない、空シーケンスはパディングなし）。mcap decoder（r2b 実データ135件）と rosbags シリアライザ（両エンディアン fuzz 1200件）で一致を確認済み。
 
 Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `frame_id` も返す（TF の frame 照合用）。
 
@@ -104,6 +110,11 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - clock チェック: トピックごとに median(header.stamp − 記録時刻) を取り、1s 以内でクラスタリング。最大クラスタが基準、同数なら `tf.clock_split` を1件
 - TF findings はスコアに影響しない（findings と `TF:` 付きレコメのみ）。`report.tf` にツリー要約
 - 実データ所見: bag4 は GNSS/TF が GPS time-of-week、r2b_galileo は `*_optical` が2 parent、r2b_robotarm は arm TF が5.2s停止
+
+## メッセージ内容チェック
+`bagx/msg_checks.py`（eval の単一 read パスに統合、スコアに影響しない、`Data:` 付きレコメ）:
+- LaserScan: 有効 range 比率 / beam 数変化 / 設定不正、CameraInfo: K 未設定 / サイズ0 / 同 namespace の Image とサイズ不一致、Image: data ≠ step×height / 解像度・encoding 変化、JointState: joint セット変化（複数 publisher）/ 長さ不一致 / NaN、空 frame_id
+- CDR フォールバック dict（num_ranges / data_size）と decoded dict（ranges / data）の両方に対応。トピックごとの小さなカウンタのみ保持
 
 ## パイプライン遅延計測
 `eval_latency.py` の `_add_pipeline_latency_recs()`:

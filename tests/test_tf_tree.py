@@ -253,3 +253,20 @@ def test_cli_tf_json_and_fail_on(tmp_path: Path) -> None:
 def test_cli_tf_rejects_unknown_severity(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["tf", _bag(tmp_path, _healthy_messages()), "--fail-on", "bad"])
     assert result.exit_code == 1
+
+
+def test_laser_scan_frame_is_checked_against_tree(tmp_path: Path) -> None:
+    """LaserScan frame_ids come from the CDR fallback parser, so Nav2 scans are covered."""
+    from tests.conftest import build_laser_scan_cdr
+
+    topics = TF_TOPICS + [{"name": "/scan", "type": "sensor_msgs/msg/LaserScan", "format": "cdr"}]
+    messages = [m for m in _healthy_messages() if m["topic"] != "/imu"]
+    messages += [
+        {"topic": "/scan", "timestamp_ns": BASE_NS + i * 100_000_000,
+         "data": build_laser_scan_cdr(BASE_SEC, i * 100_000_000, [1.0] * 10, frame_id="base_scan")}
+        for i in range(10)
+    ]
+    bag = _create_db3(tmp_path / "scan.db3", topics, sorted(messages, key=lambda m: m["timestamp_ns"]))
+    report = analyze_tf(str(bag))
+    assert report.sensor_frames["/scan"] == "base_scan"
+    assert "tf.frame_missing.base_scan" in _ids(report)

@@ -231,6 +231,111 @@ def build_tf_message_cdr(
     return buf
 
 
+def _cdr_header_prefix(stamp_sec: int, stamp_nanosec: int, frame_id: str) -> bytes:
+    buf = struct.pack("<4B", 0x00, 0x01, 0x00, 0x00)
+    buf += struct.pack("<II", stamp_sec, stamp_nanosec)
+    frame = frame_id.encode() + b"\x00"
+    buf += struct.pack("<I", len(frame)) + frame
+    return buf
+
+
+def _cdr_string(buf: bytes, value: str) -> bytes:
+    buf = _payload_align(buf, 4)
+    raw = value.encode() + b"\x00"
+    return buf + struct.pack("<I", len(raw)) + raw
+
+
+def _cdr_f64_seq(buf: bytes, values: list[float]) -> bytes:
+    buf = _payload_align(buf, 4) + struct.pack("<I", len(values))
+    if values:
+        buf = _payload_align(buf, 8) + struct.pack(f"<{len(values)}d", *values)
+    return buf
+
+
+def build_laser_scan_cdr(
+    stamp_sec: int,
+    stamp_nanosec: int,
+    ranges: list[float],
+    frame_id: str = "laser",
+    angle_min: float = -3.14,
+    angle_max: float = 3.14,
+    range_min: float = 0.1,
+    range_max: float = 30.0,
+) -> bytes:
+    """Build a fake CDR-encoded LaserScan message."""
+    buf = _cdr_header_prefix(stamp_sec, stamp_nanosec, frame_id)
+    buf = _payload_align(buf, 4)
+    increment = (angle_max - angle_min) / max(len(ranges), 1)
+    buf += struct.pack("<7f", angle_min, angle_max, increment, 0.0, 0.1, range_min, range_max)
+    buf += struct.pack("<I", len(ranges)) + struct.pack(f"<{len(ranges)}f", *ranges)
+    buf += struct.pack("<I", 0)  # intensities
+    return buf
+
+
+def build_camera_info_cdr(
+    stamp_sec: int,
+    stamp_nanosec: int,
+    width: int = 640,
+    height: int = 480,
+    k: list[float] | None = None,
+    d: list[float] | None = None,
+    frame_id: str = "camera_optical",
+) -> bytes:
+    """Build a fake CDR-encoded CameraInfo message."""
+    k = k if k is not None else [500.0, 0.0, width / 2, 0.0, 500.0, height / 2, 0.0, 0.0, 1.0]
+    d = d if d is not None else [0.0] * 5
+    buf = _cdr_header_prefix(stamp_sec, stamp_nanosec, frame_id)
+    buf = _payload_align(buf, 4) + struct.pack("<II", height, width)
+    buf = _cdr_string(buf, "plumb_bob")
+    buf = _cdr_f64_seq(buf, d)
+    buf = _payload_align(buf, 8) + struct.pack("<9d", *k)
+    buf += struct.pack("<9d", 1, 0, 0, 0, 1, 0, 0, 0, 1)
+    buf += struct.pack("<12d", k[0], 0, k[2], 0, 0, k[4], k[5], 0, 0, 0, 1, 0)
+    buf += struct.pack("<II", 0, 0)  # binning
+    buf += struct.pack("<4I?", 0, 0, 0, 0, False)  # roi
+    return buf
+
+
+def build_image_cdr(
+    stamp_sec: int,
+    stamp_nanosec: int,
+    width: int = 640,
+    height: int = 480,
+    encoding: str = "rgb8",
+    frame_id: str = "camera_optical",
+    data_size: int | None = None,
+) -> bytes:
+    """Build a fake CDR-encoded Image message (pixel bytes are zeros)."""
+    step = width * 3
+    size = step * height if data_size is None else data_size
+    buf = _cdr_header_prefix(stamp_sec, stamp_nanosec, frame_id)
+    buf = _payload_align(buf, 4) + struct.pack("<II", height, width)
+    buf = _cdr_string(buf, encoding)
+    buf += struct.pack("<B", 0)
+    buf = _payload_align(buf, 4) + struct.pack("<I", step)
+    buf += struct.pack("<I", size) + b"\x00" * size
+    return buf
+
+
+def build_joint_state_cdr(
+    stamp_sec: int,
+    stamp_nanosec: int,
+    names: list[str],
+    position: list[float] | None = None,
+    frame_id: str = "",
+) -> bytes:
+    """Build a fake CDR-encoded JointState message."""
+    position = position if position is not None else [0.0] * len(names)
+    buf = _cdr_header_prefix(stamp_sec, stamp_nanosec, frame_id)
+    buf = _payload_align(buf, 4) + struct.pack("<I", len(names))
+    for name in names:
+        buf = _cdr_string(buf, name)
+    buf = _cdr_f64_seq(buf, position)
+    buf = _cdr_f64_seq(buf, [])
+    buf = _cdr_f64_seq(buf, [])
+    return buf
+
+
 def build_stub_cdr() -> bytes:
     """Build a minimal generic CDR payload for unknown message types."""
     return struct.pack("<4B", 0x00, 0x01, 0x00, 0x00) + b"\x00" * 32

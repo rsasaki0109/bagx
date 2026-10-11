@@ -790,6 +790,11 @@ def _parse_cdr_basic(raw_data: bytes, msg_type: str) -> dict:
         "nav_msgs/msg/Odometry": _parse_odometry,
         "sensor_msgs/msg/PointCloud2": _parse_pointcloud2_meta,
         "tf2_msgs/msg/TFMessage": _parse_tf_message,
+        "sensor_msgs/msg/LaserScan": _parse_laser_scan,
+        "sensor_msgs/msg/CameraInfo": _parse_camera_info,
+        "sensor_msgs/msg/Image": _parse_image_meta,
+        "sensor_msgs/msg/CompressedImage": _parse_compressed_image_meta,
+        "sensor_msgs/msg/JointState": _parse_joint_state,
     }
 
     parser = parsers.get(msg_type)
@@ -1285,4 +1290,191 @@ def _parse_pointcloud2_meta(data: bytes) -> dict:
         result["width"] = width
         result["num_points"] = height * width
 
+    return result
+
+
+class _CdrCursor:
+    """Sequential CDR reader over the raw message bytes.
+
+    ``pos`` indexes the full buffer so large payloads (images) are never
+    copied; alignment is computed relative to ``base``, the payload start
+    after the encapsulation header, which is what CDR alignment is defined
+    against.
+    """
+
+    def __init__(self, buf: bytes, endian: str, pos: int, base: int):
+        self.buf = buf
+        self.endian = endian
+        self.pos = pos
+        self.base = base
+
+    def align(self, size: int) -> None:
+        rel = self.pos - self.base
+        self.pos = self.base + ((rel + size - 1) & ~(size - 1))
+
+    def _take(self, fmt: str, size: int, count: int = 1):
+        if len(self.buf) < self.pos + size * count:
+            raise ValueError("truncated CDR payload")
+        values = struct.unpack_from(f"{self.endian}{count}{fmt}", self.buf, self.pos)
+        self.pos += size * count
+        return values
+
+    def u8(self) -> int:
+        return self._take("B", 1)[0]
+
+    def u32(self) -> int:
+        self.align(4)
+        return self._take("I", 4)[0]
+
+    # Empty sequences carry no element padding, so align only when reading.
+    def f32s(self, count: int) -> tuple[float, ...]:
+        if not count:
+            return ()
+        self.align(4)
+        return self._take("f", 4, count)
+
+    def f64s(self, count: int) -> tuple[float, ...]:
+        if not count:
+            return ()
+        self.align(8)
+        return self._take("d", 8, count)
+
+    def string(self) -> str:
+        # Unlike _read_cdr_string, no padding after the string: the next field
+        # aligns itself (a following uint8 must not be pushed to a 4-byte boundary).
+        length = self.u32()
+        if length > len(self.buf) - self.pos:
+            raise ValueError("string length exceeds buffer")
+        raw = self.buf[self.pos : self.pos + length]
+        self.pos += length
+        return raw.rstrip(b"\x00").decode("utf-8", errors="replace")
+
+    def seq_len(self, element_size: int) -> int:
+        """Read a sequence length and check the payload can hold it."""
+        count = self.u32()
+        if count * element_size > len(self.buf) - self.pos:
+            raise ValueError("sequence length exceeds buffer")
+        return count
+
+    def skip_bytes(self) -> int:
+        """Skip a uint8[] sequence and return its length."""
+        count = self.seq_len(1)
+        self.pos += count
+        return count
+
+
+def _header_fields(header: dict) -> dict:
+    return {
+        "stamp_sec": header["stamp_sec"],
+        "stamp_nanosec": header["stamp_nanosec"],
+        "frame_id": header["frame_id"],
+    }
+
+
+def _start_header_message(data: bytes) -> tuple[dict, _CdrCursor] | None:
+    offset, endian = _read_cdr_header(data)
+    try:
+        # The header only needs 4-byte alignment and offset is 0 or 4, so
+        # absolute positions align the same way as payload-relative ones.
+        header, pos = _read_std_header_from_buf(data, offset, endian)
+    except ValueError:
+        return None
+    return _header_fields(header), _CdrCursor(data, endian, pos, base=offset)
+
+
+def _parse_laser_scan(data: bytes) -> dict:
+    """Parse sensor_msgs/msg/LaserScan; ranges are summarised, not kept."""
+    start = _start_header_message(data)
+    if start is None:
+        return {"_raw_size": len(data), "_parse_error": True}
+    result, cur = start
+    try:
+        names = ("angle_min", "angle_max", "angle_increment", "time_increment",
+                 "scan_time", "range_min", "range_max")
+        result.update(zip(names, cur.f32s(7)))
+        n = cur.seq_len(4)
+        ranges = np.frombuffer(
+            cur.buf, dtype=np.dtype(f"{cur.endian}f4"), count=n, offset=cur.pos
+        )
+        cur.pos += 4 * n
+        result["num_ranges"] = n
+        result["num_valid_ranges"] = int(np.count_nonzero(
+            np.isfinite(ranges)
+            & (ranges >= result["range_min"])
+            & (ranges <= result["range_max"])
+        ))
+        result["num_intensities"] = cur.seq_len(4)
+    except ValueError:
+        result["_parse_error"] = True
+    return result
+
+
+def _parse_camera_info(data: bytes) -> dict:
+    """Parse sensor_msgs/msg/CameraInfo (intrinsics, distortion, projection)."""
+    start = _start_header_message(data)
+    if start is None:
+        return {"_raw_size": len(data), "_parse_error": True}
+    result, cur = start
+    try:
+        result["height"] = cur.u32()
+        result["width"] = cur.u32()
+        result["distortion_model"] = cur.string()
+        result["d"] = list(cur.f64s(cur.seq_len(8)))
+        result["k"] = list(cur.f64s(9))
+        result["r"] = list(cur.f64s(9))
+        result["p"] = list(cur.f64s(12))
+        result["binning_x"] = cur.u32()
+        result["binning_y"] = cur.u32()
+    except ValueError:
+        result["_parse_error"] = True
+    return result
+
+
+def _parse_image_meta(data: bytes) -> dict:
+    """Parse sensor_msgs/msg/Image metadata; pixel data is skipped."""
+    start = _start_header_message(data)
+    if start is None:
+        return {"_raw_size": len(data), "_parse_error": True}
+    result, cur = start
+    try:
+        result["height"] = cur.u32()
+        result["width"] = cur.u32()
+        result["encoding"] = cur.string()
+        result["is_bigendian"] = cur.u8()
+        result["step"] = cur.u32()
+        result["data_size"] = cur.skip_bytes()
+    except ValueError:
+        result["_parse_error"] = True
+    result["_raw_size"] = len(data)
+    return result
+
+
+def _parse_compressed_image_meta(data: bytes) -> dict:
+    """Parse sensor_msgs/msg/CompressedImage metadata; payload is skipped."""
+    start = _start_header_message(data)
+    if start is None:
+        return {"_raw_size": len(data), "_parse_error": True}
+    result, cur = start
+    try:
+        result["format"] = cur.string()
+        result["data_size"] = cur.skip_bytes()
+    except ValueError:
+        result["_parse_error"] = True
+    result["_raw_size"] = len(data)
+    return result
+
+
+def _parse_joint_state(data: bytes) -> dict:
+    """Parse sensor_msgs/msg/JointState."""
+    start = _start_header_message(data)
+    if start is None:
+        return {"_raw_size": len(data), "_parse_error": True}
+    result, cur = start
+    try:
+        count = cur.seq_len(4)
+        result["name"] = [cur.string() for _ in range(count)]
+        for field in ("position", "velocity", "effort"):
+            result[field] = list(cur.f64s(cur.seq_len(8)))
+    except ValueError:
+        result["_parse_error"] = True
     return result
