@@ -42,7 +42,7 @@ llm = [
     "openai>=1.30.0",
 ]
 mcp = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",  # 2.x renamed FastMCP to MCPServer
 ]
 dev = [
     "pytest>=7.0",
