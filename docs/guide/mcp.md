@@ -27,6 +27,7 @@ This speaks MCP over **stdio** (default for local agent integrations).
 | `eval_bag(path)` | Quality eval → overall score, findings, recommendations |
 | `list_topics(path)` | Topic names, types, counts, bag duration |
 | `detect_anomalies(path, topic?)` | GNSS/IMU/rate anomaly report |
+| `check_tf(path, required_frames?)` | TF tree edges + findings (multiple parents, gaps, clock mismatches, missing frames) |
 | `compare_bags(path_a, path_b)` | Side-by-side metric comparison |
 | `query_messages(path, topic, start_ns?, end_ns?, limit?)` | Decoded messages for one topic |
 

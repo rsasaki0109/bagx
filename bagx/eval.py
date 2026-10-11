@@ -15,6 +15,7 @@ from typing import Any, Iterable, TextIO
 
 import numpy as np
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from bagx.custom_rules import CustomDomainResult, evaluate_custom_rule_set, load_custom_rule_set
@@ -124,6 +125,7 @@ class EvalReport:
     custom_domains: list[CustomDomainResult] = field(default_factory=list)
     workflow_metrics: list[WorkflowMetrics] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    tf: dict | None = None  # TF tree summary (frames, roots, edges); None without /tf
     _topic_timestamps: dict = field(default_factory=dict, repr=False)  # internal, not serialized
 
     def to_dict(self) -> dict:
@@ -217,8 +219,13 @@ def evaluate_bag(
         topic_name: [] for topic_name in workflow_candidate_topics
     }
 
+    from bagx.tf_tree import TfAccumulator
+
+    tf_accumulator = TfAccumulator({name: info.type for name, info in summary.topics.items()})
+
     # Read all messages if we need sync analysis
     for msg in reader.read_messages(topics=None):
+        tf_accumulator.add(msg)
         if msg.topic in topic_timestamps:
             topic_timestamps[msg.topic].append(msg.timestamp_ns)
         if msg.topic in workflow_messages:
@@ -305,6 +312,14 @@ def evaluate_bag(
 
     report.overall_score = float(np.mean(scores)) if scores else 0.0
     report.findings = generate_findings(report, domains)
+
+    tf_report = tf_accumulator.build(str(bag_path), bag_end_ns=summary.end_time_ns or None)
+    report.findings.extend(tf_report.findings)
+    if tf_report.edges:
+        tf_summary = tf_report.to_dict()
+        tf_summary.pop("findings", None)
+        tf_summary.pop("bag_path", None)
+        report.tf = tf_summary
 
     if include_anomaly:
         # Local import avoids a circular dependency: anomaly imports from eval
@@ -824,7 +839,7 @@ def _print_findings_only(
         style = _SEVERITY_STYLE.get(finding.severity, "white")
         console.print(
             f"  [{style}]{finding.severity.upper():<8}[/{style}] "
-            f"[bold]{finding.id}[/bold] — {finding.title}"
+            f"[bold]{finding.id}[/bold] — {escape(finding.title)}"
         )
         if finding.affected_topics:
             console.print(f"    [dim]topics:[/dim] {', '.join(finding.affected_topics)}")
@@ -962,6 +977,18 @@ def generate_recommendations(report: EvalReport) -> list[str]:
     recs.extend(_generate_workflow_recommendations(report.workflow_metrics))
     for domain in report.custom_domains:
         recs.extend(domain.recommendations)
+
+    # --- TF tree ---
+    tf_issues = [
+        f for f in report.findings
+        if f.category == "tf_tree" and f.severity in ("warning", "error", "critical")
+    ]
+    for finding in tf_issues:
+        marker = (
+            "[yellow]:warning:[/yellow]" if finding.severity == "warning"
+            else "[red]:x:[/red]"
+        )
+        recs.append(f"{marker} TF: {escape(finding.title)}")
 
     return recs
 

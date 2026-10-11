@@ -20,6 +20,8 @@ from bagx.reader import (
 )
 from helpers import payload_align
 from tests.conftest import (
+    build_imu_cdr,
+    build_navsatfix_cdr,
     build_odometry_cdr,
     build_pose_with_covariance_stamped_cdr,
     build_tf_message_cdr,
@@ -386,3 +388,12 @@ class TestParseCdrBasicDispatch:
 
         assert "pose" in result
         assert result["pose"]["pose"]["position"]["x"] == pytest.approx(1.0)
+
+
+def test_header_first_parsers_expose_frame_id() -> None:
+    from bagx.reader import _parse_imu, _parse_navsatfix
+
+    imu = _parse_imu(build_imu_cdr(1, 2, frame_id="imu_link"))
+    gps = _parse_navsatfix(build_navsatfix_cdr(1, 2, 0, 35.0, 139.0, 10.0))
+    assert imu["frame_id"] == "imu_link"
+    assert gps["frame_id"] == "gps"

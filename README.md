@@ -120,6 +120,7 @@ pip install bagx[ros1]   # ROS1 .bag support (pure Python via rosbags)
 | `bagx eval bag.db3` | Is this bag ready? Auto-detects SLAM / Nav2 / Autoware / MoveIt / Perception / Control |
 | `bagx compare A.db3 B.db3` | Which sensor config is better? |
 | `bagx sync bag.db3 /imu /lidar` | Are my sensors synchronized? |
+| `bagx tf bag.db3` | Is the TF tree usable? (multiple parents, gaps, clock mismatches, missing frames) |
 | `bagx anomaly bag.db3` | Where did sensor quality drop? |
 | `bagx scenario bag.db3` | Find GNSS-lost and high-dynamics segments |
 | `bagx export bag.db3 --ai` | Export to Parquet/JSON for ML |
