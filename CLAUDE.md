@@ -24,6 +24,7 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 ## アーキテクチャ
 - `reader.py`: rosbag2_py → mcap → SQLite → ROS1(rosbags) の4段階読み込み
 - 各コマンドは独立モジュール (eval.py, compare.py, etc.)
+- eval は分割済み: `eval.py`（dataclass・evaluate_bag・GNSS/IMU/sync・表示・レコメ）/ `eval_domains.py`（ドメイン別レコメ・domain score）/ `eval_topics.py`（`_select_topics` 等のトピック選択）/ `eval_workflow.py`（action/service 結果集計）/ `eval_latency.py`（パイプライン遅延）/ `eval_findings.py`（structured findings）。`bagx.eval` から `_select_topics` / `_has_*_signature` / `WorkflowMetrics` は互換のため re-export
 - CLIは `cli.py` (typer) に集約、各モジュールは遅延import
 - テスト用のダミー.db3は `tests/conftest.py` でSQLiteから直接生成
 - `logging` を全モジュールで使用。デシリアライズ失敗時にWARNING出力
@@ -65,7 +66,7 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - **周波数計算**: duration/count 方式 (バーストタイムスタンプ対応)
 
 ## フレームワーク自動検出
-`eval.py` の `_detect_domain_recommendations()` でトピック名/型からフレームワークを判定:
+`eval_domains.py` の `_detect_domain_recommendations()` でトピック名/型からフレームワークを判定:
 
 ### Nav2 検出
 - **トピックパターン**: `/odom`, `/scan`, `/cmd_vel`, `/map`, `/amcl_pose`, `/local_costmap` 等
@@ -105,7 +106,7 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - 実データ所見: bag4 は GNSS/TF が GPS time-of-week、r2b_galileo は `*_optical` が2 parent、r2b_robotarm は arm TF が5.2s停止
 
 ## パイプライン遅延計測
-`eval.py` の `_add_pipeline_latency_recs()`:
+`eval_latency.py` の `_add_pipeline_latency_recs()`:
 - 出力トピックの各タイムスタンプに対し、`np.searchsorted` で直前の入力タイムスタンプを特定
 - 差分 = 処理遅延 (median, P95)
 - 閾値: <50ms ✔, 50-200ms ⚠ (may affect real-time), >200ms ❌ (too slow)

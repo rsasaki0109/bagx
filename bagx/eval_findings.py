@@ -40,7 +40,8 @@ from bagx.findings import Evidence, Finding, clean_topic_token, finding_id
 
 if TYPE_CHECKING:
     from bagx.custom_rules import CustomDomainResult
-    from bagx.eval import EvalReport, WorkflowMetrics
+    from bagx.eval import EvalReport
+    from bagx.eval_workflow import WorkflowMetrics
 
 
 def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Finding]:
