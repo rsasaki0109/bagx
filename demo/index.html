@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Try bagx in your browser — rosbag readiness check, no install</title>
+<meta name="description" content="Drop a ROS2 .db3 rosbag and get a readiness score, SLAM recommendations, and a shareable HTML report. Runs entirely in your browser via WebAssembly — your bag never leaves your machine.">
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a212b;
+    --border: #2c3947;
+    --text: #e6edf3;
+    --muted: #8b9aab;
+    --accent: #4da3ff;
+    --good: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  main { width: min(960px, 94vw); margin: 0 auto; flex: 1; }
+  h1 { font-size: 1.7rem; margin: 2.2rem 0 0.3rem; }
+  h1 .x { color: var(--accent); }
+  .tagline { color: var(--muted); margin: 0 0 1.6rem; }
+  .privacy {
+    display: inline-block;
+    font-size: 0.85rem;
+    color: var(--good);
+    border: 1px solid var(--good);
+    border-radius: 999px;
+    padding: 0.15rem 0.8rem;
+    margin-bottom: 1.2rem;
+  }
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 2.6rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #dropzone.dragover { border-color: var(--accent); background: #1d2a3a; }
+  #dropzone p { margin: 0.3rem 0; }
+  #dropzone .hint { color: var(--muted); font-size: 0.9rem; }
+  .actions { margin: 1rem 0 1.4rem; display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 1.1rem;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08233f; font-weight: 600; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  #status { color: var(--muted); font-size: 0.92rem; min-height: 1.4em; margin: 0.6rem 0; }
+  #status.error { color: #f85149; }
+  progress { width: 100%; height: 6px; accent-color: var(--accent); }
+  #report-frame {
+    width: 100%;
+    height: 75vh;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    display: none;
+  }
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 2.5rem;
+    padding: 1.1rem 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  footer code { background: var(--panel); padding: 0.15rem 0.45rem; border-radius: 6px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <h1>bag<span class="x">x</span> — try it in your browser</h1>
+  <p class="tagline">Drop a recorded ROS2 bag and get a readiness score, sensor findings,
+  and SLAM tuning hints — before you waste hours on a failed run.</p>
+  <div class="privacy">&#128274; Your bag never leaves this page — analysis runs locally in WebAssembly</div>
+
+  <div id="dropzone">
+    <p><strong>Drop a ROS2 <code>.db3</code> bag here</strong> or click to choose a file</p>
+    <p class="hint">ROS1 .bag / .mcap / multi-segment bags are supported by the CLI: <code>pip install bagx</code></p>
+    <input type="file" id="file-input" accept=".db3" hidden>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="sample-btn">Try with a sample bag</button>
+    <button id="download-btn" disabled>Download HTML report</button>
+  </div>
+
+  <div id="status">Loading Python runtime in the background&hellip;</div>
+  <progress id="progress" max="100" value="0" hidden></progress>
+
+  <iframe id="report-frame" title="bagx eval report"></iframe>
+</main>
+
+<footer>
+  Generated reports are identical to <code>bagx eval &lt;bag&gt; --html report.html</code> &middot;
+  <code>pip install bagx</code> &middot;
+  <a href="https://github.com/rsasaki0109/bagx">GitHub</a> &middot;
+  <a href="../">Documentation</a>
+</footer>
+
+<script type="module">
+const BAGX_VERSION = "0.6.0";
+const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.mjs";
+const MAX_BYTES = 300 * 1024 * 1024;
+
+const statusEl = document.getElementById("status");
+const progressEl = document.getElementById("progress");
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("file-input");
+const sampleBtn = document.getElementById("sample-btn");
+const downloadBtn = document.getElementById("download-btn");
+const frame = document.getElementById("report-frame");
+
+let lastReportHtml = null;
+let busy = false;
+
+function setStatus(msg, isError = false) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("error", isError);
+}
+
+const pyodideReady = (async () => {
+  const { loadPyodide } = await import(PYODIDE_URL);
+  const pyodide = await loadPyodide();
+  setStatus("Loading numpy + sqlite3…");
+  await pyodide.loadPackage(["numpy", "sqlite3", "micropip"], { messageCallback: () => {} });
+  setStatus(`Installing bagx ${BAGX_VERSION} from PyPI…`);
+  await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(["typer", "rich"])
+# The eval + HTML report path does not import pandas/pyarrow, so skip
+# heavy binary dependencies entirely.
+await micropip.install("bagx==${BAGX_VERSION}", deps=False)
+`);
+  setStatus("Ready. Drop a .db3 bag or try the sample.");
+  return pyodide;
+})().catch((e) => {
+  setStatus(`Failed to load the Python runtime: ${e}`, true);
+  throw e;
+});
+
+async function evaluateBytes(bytes, label) {
+  if (busy) return;
+  busy = true;
+  downloadBtn.disabled = true;
+  frame.style.display = "none";
+  progressEl.hidden = false;
+  progressEl.removeAttribute("value");
+  try {
+    setStatus("Waiting for Python runtime…");
+    const pyodide = await pyodideReady;
+    setStatus(`Evaluating ${label} (${(bytes.length / 1024 / 1024).toFixed(1)} MB)…`);
+    pyodide.FS.writeFile("/input.db3", bytes);
+    const html = await pyodide.runPythonAsync(`
+from bagx.eval import evaluate_bag
+from bagx.report_html import eval_json_to_html
+
+_report = evaluate_bag("/input.db3")
+eval_json_to_html(_report.to_dict())
+`);
+    lastReportHtml = html;
+    frame.srcdoc = html;
+    frame.style.display = "block";
+    downloadBtn.disabled = false;
+    setStatus(`Done — identical to "bagx eval ${label} --html" on the CLI.`);
+  } catch (e) {
+    const detail = String(e).split("\n").slice(-3).join(" ").slice(0, 300);
+    setStatus(`Evaluation failed: ${detail} — for unusual bags, try the CLI: pip install bagx`, true);
+  } finally {
+    progressEl.hidden = true;
+    progressEl.value = 0;
+    busy = false;
+  }
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith(".db3")) {
+    setStatus("This demo reads single .db3 files. For .mcap / ROS1 .bag / directories, use the CLI: pip install bagx", true);
+    return;
+  }
+  if (file.size > MAX_BYTES) {
+    setStatus(`File is ${(file.size / 1024 / 1024).toFixed(0)} MB — too large for browser memory. Install the CLI for large bags: pip install bagx`, true);
+    return;
+  }
+  const buf = await file.arrayBuffer();
+  await evaluateBytes(new Uint8Array(buf), file.name);
+}
+
+dropzone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
+["dragover", "dragenter"].forEach((ev) =>
+  dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("dragover"); })
+);
+["dragleave", "drop"].forEach((ev) =>
+  dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove("dragover"); })
+);
+dropzone.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+
+sampleBtn.addEventListener("click", async () => {
+  setStatus("Fetching sample bag (handheld IMU + GNSS + odometry, 0.5 MB)…");
+  try {
+    const resp = await fetch("sample_bag.db3");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const buf = await resp.arrayBuffer();
+    await evaluateBytes(new Uint8Array(buf), "sample_bag.db3");
+  } catch (e) {
+    setStatus(`Could not fetch the sample bag: ${e}`, true);
+  }
+});
+
+downloadBtn.addEventListener("click", () => {
+  if (!lastReportHtml) return;
+  const blob = new Blob([lastReportHtml], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "bagx_report.html";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
