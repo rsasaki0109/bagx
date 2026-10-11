@@ -77,8 +77,14 @@ Host the file somewhere reachable by URL and reference it from a README:
     The noise values reported by bagx are `std(diff(x)) / √2`, which equals the Allan Deviation at τ = 1/fs (sampling period). This was verified on real IMU data (Livox MID-360, 200Hz): diff-based = 0.0114 m/s², Allan σ(τ=dt) = 0.0114 m/s². For the standard Allan VRW/ARW specification (at τ=1s), use a dedicated Allan Variance tool on static data.
 
 ### Topic Sync
-- **Mean/max delay**: Nearest-neighbor timestamp matching between adjacent topic pairs
-- Evaluates the first 5 topic pairs by name order
+- **Mean/max delay**: for each message of the sparser topic in a pair, the record-time
+  distance to the nearest message of the denser topic (e.g. each LiDAR scan → nearest IMU
+  sample). Walking the denser topic would measure the sparser topic's period instead.
+- Evaluates the first 5 adjacent topic pairs by name order, among sensor streams
+  (Imu, NavSatFix, LaserScan, PointCloud2, Image, …; `camera_info`, temperature and
+  magnetometer topics are skipped)
+- Uses record time, so a constant offset hidden in `header.stamp` is not visible here;
+  the TF clock check (`tf.clock_mismatch.*`) compares stamps against record time
 
 ### Pipeline latency
 For stack pipelines (Nav2 scan → costmap, odom → localization; Autoware sensing →

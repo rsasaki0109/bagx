@@ -142,28 +142,28 @@ class TestCliEval:
         assert "Recommendations:" not in result.output
         assert "Overall Score" not in result.output
 
-    def test_eval_severity_min_filters_text(self, multi_bag: Path):
+    def test_eval_severity_min_filters_text(self, skewed_sync_bag: Path):
         # Default findings_only output contains both info and warning findings.
-        baseline = runner.invoke(app, ["eval", str(multi_bag), "--findings-only"])
+        baseline = runner.invoke(app, ["eval", str(skewed_sync_bag), "--findings-only"])
         assert baseline.exit_code == 0
         assert "INFO" in baseline.output
         assert "WARNING" in baseline.output
 
         filtered = runner.invoke(
             app,
-            ["eval", str(multi_bag), "--findings-only", "--severity-min", "warning"],
+            ["eval", str(skewed_sync_bag), "--findings-only", "--severity-min", "warning"],
         )
         assert filtered.exit_code == 0
         assert "WARNING" in filtered.output
         assert "INFO" not in filtered.output
 
-    def test_eval_severity_min_filters_json(self, multi_bag: Path, tmp_path: Path):
+    def test_eval_severity_min_filters_json(self, skewed_sync_bag: Path, tmp_path: Path):
         json_path = tmp_path / "eval.json"
         result = runner.invoke(
             app,
             [
                 "eval",
-                str(multi_bag),
+                str(skewed_sync_bag),
                 "--json",
                 str(json_path),
                 "--severity-min",

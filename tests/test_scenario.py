@@ -334,3 +334,36 @@ class TestScenarioTopicFiltering:
         report = detect_scenarios(str(bag_path), sync_delay_threshold_ms=100.0)
         sync_degraded = [s for s in report.scenarios if s.type == "sync_degraded"]
         assert sync_degraded == []
+
+    def test_sync_degraded_walks_the_sparser_topic(self, tmp_path: Path):
+        """A dense topic sorting first must not report the sparse topic's period as delay."""
+        from tests.conftest import _create_db3, build_imu_cdr, build_stub_cdr
+
+        topics = [
+            {"name": "/a_imu", "type": "sensor_msgs/msg/Imu", "format": "cdr"},
+            {"name": "/b_scan", "type": "sensor_msgs/msg/LaserScan", "format": "cdr"},
+        ]
+        messages = []
+        base_ns = 1_700_000_600_000_000_000
+
+        for i in range(2000):
+            imu_ts = base_ns + i * 5_000_000  # 200Hz for 10s
+            messages.append({
+                "topic": "/a_imu",
+                "timestamp_ns": imu_ts,
+                "data": build_imu_cdr(
+                    stamp_sec=imu_ts // 1_000_000_000,
+                    stamp_nanosec=imu_ts % 1_000_000_000,
+                ),
+            })
+
+        for i in range(11):
+            scan_ts = base_ns + i * 1_000_000_000  # 1Hz, aligned with IMU samples
+            messages.append({"topic": "/b_scan", "timestamp_ns": scan_ts, "data": build_stub_cdr()})
+
+        messages.sort(key=lambda m: m["timestamp_ns"])
+        bag_path = tmp_path / "scenario_sync_sparse.db3"
+        _create_db3(bag_path, topics, messages)
+
+        report = detect_scenarios(str(bag_path), sync_delay_threshold_ms=100.0)
+        assert [s for s in report.scenarios if s.type == "sync_degraded"] == []

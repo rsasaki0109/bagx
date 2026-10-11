@@ -147,16 +147,18 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 8. NavSatFix CDR パーサーが status(int8) の前で4バイト境界に揃えていた → frame_id 長+1 が4の倍数以外（`gnss_link` など）で fix rate を誤判定（ROS バックエンドとの一致テストで発見）
 9. ROS 2 Jazzy で全メッセージの dict 化が失敗し、独自型（Autoware 等）の中身が失われていた（`_check_fields` スロット）
 10. pyarrow 26 は NumPy 2 必須（未宣言）→ NumPy 1.x の ROS 環境で `bagx export` が import 失敗。`pyarrow<26` に固定
+11. sync 指標が名前順で先のトピックを走査していた → 200Hz IMU ↔ 10Hz LiDAR で LiDAR 周期の1/4（約25ms）を「遅延」と誤計測し、偽の deskew 警告（MID-360 sync 70 → 100、bag4 67.7 → 87.4）。疎な側を走査する `topic_filters.nearest_neighbor_delays_ns` に統一（scenario の sync_degraded も同じ）
+12. `/imu/temperature` / `/imu/magnetic_field` が名前の `imu` で sync 候補になりカメラと組まれていた（NTU VIRAL）→ Temperature / MagneticField 等の型を除外
 
 ## 実データ検証済みデータセット
 
 ### SLAM
 | データセット | Overall | IMU | Sync | 所見 |
 |---|---|---|---|---|
-| Newer College (handheld) | 92.3 | 84.5 | 100.0 | 最高品質、SLAM benchmarkに最適 |
-| Livox MID-360 | 83.7 | 97.3 | 70.0 | IMU最良、sync 25ms要deskew |
-| NTU VIRAL (drone) | 79.8 | 59.5 | 100.0 | IMUノイジー、LO推奨 |
-| Ouster OS0-32 (static) | 76.6 | 79.6 | 73.6 | 50Hz IMU遅い、Allan Variance自動計算 |
+| Livox MID-360 (AIST driving, Zenodo 14841855) | 98.7 | 97.3 | 100.0 | IMU最良、LiDAR↔IMU 1.6ms（旧 sync 70 / 25ms は指標バグ） |
+| NTU VIRAL eee_03 (drone, DR-NTU) | 84.0 | 72.0 | 100.0 | 飛行中の accel ノイズ 0.30 m/s²、LO推奨 |
+| Newer College (handheld) | — | — | — | 申請フォーム必須で未固定、スコア削除（旧 0.4.0 は 92.3） |
+| Ouster OS0-32 (static) | — | — | — | 元 bag が公開ファイルに紐付かず `source_unavailable` |
 
 ### Nav2
 | データセット | 検出 | 所見 |
@@ -205,7 +207,7 @@ EuRoC MH_01 は `robotics.ethz.ch` が不通の環境では ETH Research Collect
   - `scripts/generate_scoreboard.py --check` で整合性検証（同一bagで採点された行の重複検出など、テストでも実行）
   - 公開行に dogfood bag を symlink で割り当てない（過去に TurtleBot3/Panda 行が sim の結果の複製になっていた）
 - `scripts/generate_scoreboard.py` — manifest → `docs/scoreboard.md` 自動生成
-- `--refresh --write-manifest` でローカル bag からスコア更新（`BAGX_SCOREBOARD_BAGS`）
+- `--refresh --write-manifest` でローカル bag からスコア更新（`BAGX_SCOREBOARD_BAGS`）。タグ外のコードで採点した行は `bagx_version` が `X.Y.Z+dev`
 - `.db3.zstd` 展開先: `BAGX_DB3_CACHE`（`/tmp` 満杯時は `.cache/db3-decompress` 等を指定）
 - `scripts/fetch_scoreboard_bags.sh` — Autoware S3 + AutoCore + NVIDIA r2b (NGC) を一括取得
 - 分析記事: `docs/scoreboard/why-*.md`（低スコアの理由解説）

@@ -62,7 +62,7 @@ def test_build_scoreboard_markdown_contains_markers(scoreboard_manifest: Path) -
         manifest = json.load(f)
     md = build_scoreboard_markdown(manifest)
     assert "<!-- SCOREBOARD_TABLE_START -->" in md
-    assert "why-ouster-os0-32-scores-77" in md
+    assert "why-ntu-viral-imu-is-noisy" in md
 
 
 def test_update_scoreboard_file_preserves_outer_sections(

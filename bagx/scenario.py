@@ -18,7 +18,7 @@ from rich.table import Table
 
 from bagx.contracts import report_metadata
 from bagx.reader import BagReader
-from bagx.topic_filters import is_sync_candidate
+from bagx.topic_filters import is_sync_candidate, nearest_neighbor_delays_ns
 
 logger = logging.getLogger(__name__)
 
@@ -354,17 +354,12 @@ def _detect_sync_degraded(
         if len(ts1) < 5 or len(ts2) < 5:
             continue
 
-        # For each message in t1, find nearest in t2 and compute delay
-        delays: list[tuple[int, float]] = []  # (timestamp_ns, delay_ms)
-        for t in ts1:
-            idx = int(np.searchsorted(ts2, t))
-            candidates: list[int] = []
-            if idx < len(ts2):
-                candidates.append(abs(int(ts2[idx] - t)))
-            if idx > 0:
-                candidates.append(abs(int(ts2[idx - 1] - t)))
-            if candidates:
-                delays.append((int(t), min(candidates) / 1e6))
+        # For each message of the sparser topic, delay to the nearest message of the other
+        sparse = ts1 if len(ts1) <= len(ts2) else ts2
+        delays: list[tuple[int, float]] = [  # (timestamp_ns, delay_ms)
+            (int(t), float(d) / 1e6)
+            for t, d in zip(sparse, nearest_neighbor_delays_ns(ts1, ts2))
+        ]
 
         # Find sustained periods above threshold
         degraded_start: int | None = None

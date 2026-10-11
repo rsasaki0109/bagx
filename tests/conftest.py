@@ -405,9 +405,14 @@ def imu_bag(tmp_path: Path) -> Path:
     return _create_db3(bag_path, topics, messages)
 
 
-@pytest.fixture
-def multi_bag(tmp_path: Path) -> Path:
-    """Create a bag with GNSS + IMU + a generic topic for sync testing."""
+def _build_multi_bag(
+    tmp_path: Path,
+    *,
+    imu_period_ns: int = 10_000_000,
+    lidar_offset_ns: int = 0,
+    name: str = "multi.db3",
+) -> Path:
+    """GNSS (10Hz) + IMU + LiDAR (10Hz, 5ms jitter) over 5 seconds."""
     import random
 
     random.seed(42)
@@ -433,9 +438,9 @@ def multi_bag(tmp_path: Path) -> Path:
         )
         messages.append({"topic": "/gnss", "timestamp_ns": ts, "data": data})
 
-    # IMU at 100Hz
-    for i in range(500):
-        ts = base_ns + i * 10_000_000
+    # IMU (100Hz by default)
+    for i in range(5_000_000_000 // imu_period_ns):
+        ts = base_ns + i * imu_period_ns
         data = build_imu_cdr(
             stamp_sec=ts // 1_000_000_000,
             stamp_nanosec=ts % 1_000_000_000,
@@ -447,7 +452,7 @@ def multi_bag(tmp_path: Path) -> Path:
     # LiDAR at 10Hz with slight offset (5ms jitter)
     for i in range(50):
         jitter = random.randint(-5_000_000, 5_000_000)
-        ts = base_ns + i * 100_000_000 + jitter
+        ts = base_ns + i * 100_000_000 + lidar_offset_ns + jitter
         # Minimal fake PointCloud2 data
         data = struct.pack("<4B", 0x00, 0x01, 0x00, 0x00)  # CDR header
         data += struct.pack("<II", ts // 1_000_000_000, ts % 1_000_000_000)  # stamp
@@ -461,8 +466,22 @@ def multi_bag(tmp_path: Path) -> Path:
     # Sort by timestamp
     messages.sort(key=lambda m: m["timestamp_ns"])
 
-    bag_path = tmp_path / "multi.db3"
+    bag_path = tmp_path / name
     return _create_db3(bag_path, topics, messages)
+
+
+@pytest.fixture
+def multi_bag(tmp_path: Path) -> Path:
+    """GNSS + 100Hz IMU + LiDAR; every LiDAR scan has an IMU sample within 5ms."""
+    return _build_multi_bag(tmp_path)
+
+
+@pytest.fixture
+def skewed_sync_bag(tmp_path: Path) -> Path:
+    """GNSS + 10Hz IMU + LiDAR recorded 40ms after each IMU sample (sync delay high)."""
+    return _build_multi_bag(
+        tmp_path, imu_period_ns=100_000_000, lidar_offset_ns=40_000_000, name="skewed.db3"
+    )
 
 
 @pytest.fixture

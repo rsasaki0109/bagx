@@ -107,6 +107,33 @@ def _scores_from_report(report_dict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scoring_version() -> str:
+    """bagx version that produced a score; "+dev" when the code is not a tagged release.
+
+    Without the suffix a row rescored on main would claim a released version that
+    gives different numbers.
+    """
+    import subprocess
+
+    from bagx import __version__
+
+    try:
+        exact = subprocess.run(
+            ["git", "describe", "--tags", "--exact-match", "--dirty"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return __version__
+    if exact.returncode == 0 and exact.stdout.strip() == f"v{__version__}":
+        return __version__
+    if not (REPO_ROOT / ".git").exists():
+        return __version__
+    return f"{__version__}+dev"
+
+
 def refresh_manifest_scores(
     manifest: dict[str, Any],
     manifest_path: Path,
@@ -114,8 +141,9 @@ def refresh_manifest_scores(
     repo_fallback: bool = True,
 ) -> tuple[int, int]:
     """Run bagx eval on cases whose bags exist; update embedded results."""
-    from bagx import __version__
     from bagx.eval import detect_domain_names, evaluate_bag
+
+    version = _scoring_version()
 
     manifest_dir = manifest_path.parent
     repo_cache = REPO_ROOT / ".cache" / "dogfood"
@@ -150,7 +178,7 @@ def refresh_manifest_scores(
             **scores,
             "key_finding": _pick_key_finding(report_dict, domains),
             "fingerprint": _fingerprint_from_report(report_dict),
-            "bagx_version": __version__,
+            "bagx_version": version,
             "evaluated_at": date.today().isoformat(),
         }
         refreshed += 1
@@ -343,9 +371,8 @@ downloaded.
 ## Analysis articles
 
 - [Why EuRoC MH_01_easy IMU looks noisy](scoreboard/why-euroc-mh01-imu-is-noisy.md)
-- [Why Ouster OS0-32 scores 77](scoreboard/why-ouster-os0-32-scores-77.md)
 - [Why NTU VIRAL IMU looks noisy](scoreboard/why-ntu-viral-imu-is-noisy.md)
-- [Why Autoware all-sensors-bag4 scores 78](scoreboard/why-autoware-all-sensors-bag4-scores-78.md)
+- [Why Autoware all-sensors-bag4 scores 83](scoreboard/why-autoware-all-sensors-bag4-scores-83.md)
 
 """
     return f"{header}{MARKER_START}\n\n{table}\n\n{MARKER_END}\n\n{reproduce}\n"

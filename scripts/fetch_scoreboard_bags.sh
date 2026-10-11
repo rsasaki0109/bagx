@@ -56,6 +56,36 @@ if [[ ! -f euroc_mh01/MH_01_easy.bag ]]; then
   ln -sfn euroc_mh01/MH_01_easy.bag MH_01_easy.bag
 fi
 
+fetch_zip() {
+  local name="$1" url="$2" md5="$3" check="$4"
+  if [[ -e "$check" ]]; then
+    return
+  fi
+  echo "==> ${name}"
+  curl -fL "$url" -o "${name}.zip"
+  echo "${md5}  ${name}.zip" | md5sum -c -
+  unzip -q "${name}.zip"
+  rm -f "${name}.zip"
+}
+
+# Livox MID-360 driving bag (K. Koide / AIST, Zenodo 14841855, CC-BY-4.0, 517MB)
+fetch_zip livox_mid360 \
+  "https://zenodo.org/api/records/14841855/files/rosbag2_2024_04_16-14_17_01.zip/content" \
+  0836c50859bb1af591966b69da166186 livox_mid360_aist/metadata.yaml
+if [[ -d rosbag2_2024_04_16-14_17_01 && ! -e livox_mid360_aist ]]; then
+  mv rosbag2_2024_04_16-14_17_01 livox_mid360_aist
+fi
+
+# NTU VIRAL eee_03 (DR-NTU doi:10.21979/N9/X39LEK, CC BY-NC 4.0, 2.0GB)
+fetch_zip eee_03 "https://researchdata.ntu.edu.sg/api/access/datafile/68132" \
+  9bf10b5455ee6d2962324ef557f86433 eee_03/eee_03.bag
+
+if [[ ! -f dataset-calib-imu1_512_16.bag ]]; then
+  echo "==> TUM VI calib-imu1 (~1.1GB)"
+  curl -fL https://cvg.cit.tum.de/tumvi/calibrated/512_16/dataset-calib-imu1_512_16.bag \
+    -o dataset-calib-imu1_512_16.bag
+fi
+
 fetch_r2b() {
   local seq="$1"
   local base="https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/r2bdataset2024/versions/1/files/${seq}"
