@@ -69,6 +69,29 @@ transport and recording latency must be checked before interpreting that
 difference as a clock or calibration fault. All 58,217 messages were evaluated:
 the overall score stays **98.7**, and the existing findings match main exactly.
 
+### Public multi-sensor validation
+
+On [NTU VIRAL `eee_03`](https://doi.org/10.21979/N9/X39LEK), all **389,804**
+messages were evaluated on main and the unreleased code. The default five pairs,
+scores and legacy findings / recommendations match exactly, with the added
+header diagnostics excluded from the comparison. Choosing `--sync-pairing imu`
+uses `/imu/imu` as the primary IMU and evaluates **eight pairs**, including the
+previously uncovered right camera and both node2 streams:
+
+| Newly covered sensor | Header-neighbor mean / P95 (ms) | Relative stamp/record offset (ms, sensor − primary IMU) |
+|----------------------|--------------------------------|------------------------------------------------------|
+| `/os1_cloud_node2/imu` | 1.275 / 2.420 | +0.119 |
+| `/os1_cloud_node2/points` | 1.321 / 2.448 | −0.891 |
+| `/right/image_raw` | 1.276 / 2.432 | −1.411 |
+
+All eight pairs have usable stamps and informational `measured` findings. Both
+pairing modes score **84.0 overall / 100 sync** on this recording; that equality
+does not imply that other bags will have the same scores in both modes, or prove
+physical synchronization. See the [NTU interpretation](../scoreboard/why-ntu-viral-imu-is-noisy.md)
+for component scores and reproduction commands.
+
+### Findings
+
 Each pair produces a `sync_quality` finding with an id of the form
 `sync.header_stamp.<topic_a_token>.<topic_b_token>.<state>`:
 

@@ -136,6 +136,7 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - `sync.header_stamp.<topic_a_token>.<topic_b_token>.*`（category `sync_quality`）の findings と `Header sync:` レコメ。差20ms以上で warning、1s以上なら clock 不一致候補として header 最近傍は出さない。
 - 非ゼロ stamp が5件未満、coverage90%未満、stamp重複・逆行、共通区間不足は `unavailable`。missing を正常判定にしない。
 - `bagx sync` CLI の既存記録時刻指標は変更しない。詳細は `docs/guide/sync.md`。
+- NTU VIRAL `eee_03` 全389,804件で main と既定の score / 既存 findings・レコメが一致（header 追加分を除く）。`imu` mode は5→8組で右カメラ・node2 IMU/points も対象、Overall 84.0 / Sync 100 は維持。追加組の header 最近傍 mean は1.275〜1.321ms、相対 stamp/record offset は−1.411〜+0.119ms。
 
 ## anomaly検出の注意点
 - **IMUトピックは専用検出器**でカバー。`rate_gap`からは除外（二重検出防止）

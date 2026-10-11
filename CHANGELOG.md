@@ -51,7 +51,12 @@ All notable changes to bagx are documented here. The format follows
   by 50 ms plus a 200 Hz IMU, sync is 70.96 (`adjacent`) → 100 (`imu`);
   this is a change in compared pairs, not evidence of hardware alignment.
   Default public scoreboard rows are unchanged (MID-360 overall 98.7 / sync
-  100, NTU VIRAL overall 84.0 / sync 100). Keep the pairing mode fixed in
+  100, NTU VIRAL overall 84.0 / sync 100). Public NTU VIRAL `eee_03` validation
+  (389,804 messages) expands 5 → 8 pairs, adding the right camera and both
+  node2 streams; overall stays 83.9861 → 83.9861 and sync 100 → 100. The added
+  pairs' header-neighbor means are 1.2751–1.3208 ms, with relative stamp/record
+  offsets −1.4112–+0.1189 ms. Default legacy findings / recommendations match
+  main after excluding the added header diagnostics. Keep the pairing mode fixed in
   comparisons / CI gates; alternate-mode scores need their own bag evaluation
   and must not replace the default scoreboard results.
 - Report `schema_version` 1.3.0 → 1.4.0. This is additive: eval JSON gains `tf` and new
@@ -69,7 +74,9 @@ All notable changes to bagx are documented here. The format follows
 ### Fixed
 - Eval JSON serialization no longer recursively copies internal timestamp /
   header-stamp buffers before discarding them. Public JSON, scores and retained
-  buffers are unchanged; large reports avoid this unnecessary allocation.
+  buffers are unchanged; large reports avoid this unnecessary allocation. On
+  the public NTU VIRAL `eee_03` report, traced peak allocations during `to_dict`
+  drop from 27.54 MB to 0.10 MB (not total evaluation memory).
 - Sync score (`bagx eval`, all SLAM / Autoware / perception bags with two or more sensor
   streams): each pair walked whichever topic sorted first by name and took the nearest
   message on the other. For a dense/sparse pair such as 200 Hz IMU ↔ 10 Hz LiDAR this
