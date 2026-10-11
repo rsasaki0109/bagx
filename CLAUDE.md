@@ -16,6 +16,8 @@ ruff check bagx/              # lint
 ruff check .                  # テスト含むlint (CIと同じ)
 ```
 
+CI には ROS 2 ジョブ（`ros:humble-ros-base` / `ros:jazzy-ros-base` コンテナ、`--system-site-packages` の venv）があり、.db3 を rosbag2_py 経路で読むテストとバックエンド一致テストを回す。ローカルで再現するなら Ubuntu 24.04 に `ros-jazzy-rosbag2-py` 等を apt で入れ、`source /opt/ros/jazzy/setup.bash` して python3.12 の venv で pytest。
+
 ## コマンド一覧
 eval / compare / sync / tf / export / anomaly / scenario / ask / scene / info / batch eval / batch anomaly
 
@@ -40,6 +42,9 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 - **マルチセグメント対応**: ディレクトリ内の複数.db3/.mcapを集約して読む
 - **CDRエンディアン対応**: encapsulationヘッダーからbig/littleを判定
 - **mcapフォールバック**: デコーダ失敗時にCDR basic parserへフォールバック
+- **バックエンド間の一致**: rosbag2_py / mcap でデコードした dict も `_normalize_msg_data` で SQLite/CDR と同じ形（`stamp_sec`、NavSatFix の flat な `status`）に揃える。`HEAVY_MSG_TYPES`（PointCloud2 / Image / CompressedImage）はどのバックエンドでもメタデータのみの CDR パーサーで読む（ROS デコードで画素を Python list にしない）
+- ROS 2 メッセージの dict 化は `get_fields_and_field_types()` を使う（Jazzy は `__slots__` に `_check_fields` があり、旧実装は全メッセージで例外→黙って CDR フォールバックしていた）
+- `tests/test_backend_parity.py`（ROS がある時だけ実行）: fixture と rosbag2_py で書いた実 bag で ROS 経路と SQLite 経路の eval 結果が一致すること、全 CDR パーサーが rclpy のシリアライズと frame_id 長 0〜11 で一致することを検証
 
 ## CDRパーサー
 `reader.py` に以下のメッセージ型のCDRバイナリパーサーがある:
@@ -139,6 +144,9 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 5. パイプライン遅延0ms (sliding pointer → binary search)
 6. Nav2 bagに「KISS-ICP推奨」(ドメイン検出時SLAM advice抑制)
 7. MoveIt `/fr3_gripper/joint_states`未検出 (パターン拡張)
+8. NavSatFix CDR パーサーが status(int8) の前で4バイト境界に揃えていた → frame_id 長+1 が4の倍数以外（`gnss_link` など）で fix rate を誤判定（ROS バックエンドとの一致テストで発見）
+9. ROS 2 Jazzy で全メッセージの dict 化が失敗し、独自型（Autoware 等）の中身が失われていた（`_check_fields` スロット）
+10. pyarrow 26 は NumPy 2 必須（未宣言）→ NumPy 1.x の ROS 環境で `bagx export` が import 失敗。`pyarrow<26` に固定
 
 ## 実データ検証済みデータセット
 

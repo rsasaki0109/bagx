@@ -32,3 +32,38 @@ jobs:
 
       - name: Run benchmark smoke suite
         run: python3 scripts/run_benchmark_smoke.py
+
+  test-ros2:
+    # Runs the suite with rosbag2_py importable, so .db3 bags go through the ROS
+    # backend (rclpy deserialization) instead of the SQLite/CDR fallback, and the
+    # backend parity tests in tests/test_backend_parity.py execute.
+    name: test (ROS 2 ${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    container: ros:${{ matrix.distro }}-ros-base
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python tooling
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3-pip python3-venv
+
+      - name: Install bagx
+        run: |
+          source /opt/ros/$ROS_DISTRO/setup.bash
+          python3 -m venv --system-site-packages /opt/bagx-venv
+          /opt/bagx-venv/bin/pip install -e ".[dev,ros1,mcp]"
+
+      - name: Run tests through the rosbag2_py backend
+        run: |
+          source /opt/ros/$ROS_DISTRO/setup.bash
+          /opt/bagx-venv/bin/python -c "import bagx.reader as r; assert r.HAS_ROS, 'rosbag2_py is not importable'"
+          /opt/bagx-venv/bin/python -m pytest tests -q
