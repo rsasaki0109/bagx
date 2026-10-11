@@ -7,6 +7,16 @@ All notable changes to bagx are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `bagx eval` header-stamp sync diagnostics for its existing sensor pairs:
+  header nearest-neighbor mean/P95 plus relative median `stamp − record_time`
+  offsets reveal constant timestamp offsets hidden by dense periodic streams.
+  New `sync_quality` findings are
+  `sync.header_stamp.<topic_a_token>.<topic_b_token>.measured`, `.offset`,
+  `.delay_high`, `.clock_mismatch` and `.unavailable`. Offsets include recording /
+  transport latency and are not a physical sensor-delay measurement. Missing,
+  zero, sparse, repeated or regressing stamps and incompatible clocks are
+  explicitly reported. These add findings / recommendations without changing
+  scores, report keys or versions; severity-based CI gates can see new warnings.
 - `bagx tf`: TF tree validation (multiple parents, cycles, disconnected trees, transforms on
   both `/tf` and `/tf_static`, pauses and early stops, zero or regressing stamps, clock
   mismatches between topics, sensor `frame_id`s missing from the tree, `--require-frames`,

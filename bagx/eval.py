@@ -990,6 +990,13 @@ def generate_recommendations(report: EvalReport) -> list[str]:
     # --- TF tree and message content (findings-only checks, no score impact) ---
     prefixes = {"tf_tree": "TF", "message_content": "Data"}
     for finding in report.findings:
+        if finding.id.startswith("sync.header_stamp."):
+            marker = (
+                "[yellow]:warning:[/yellow]" if finding.severity == "warning"
+                else "[dim]:information_source:[/dim]"
+            )
+            recs.append(f"{marker} Header sync: {escape(finding.title)}")
+            continue
         prefix = prefixes.get(finding.category)
         if prefix is None or finding.severity not in ("warning", "error", "critical"):
             continue

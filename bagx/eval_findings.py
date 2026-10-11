@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Iterable
 import numpy as np
 
 from bagx.domain_plugins import detect_domains, discover_domain_plugins
+from bagx.eval_sync_stamps import generate_stamp_sync_findings
 from bagx.findings import Evidence, Finding, clean_topic_token, finding_id
 
 if TYPE_CHECKING:
@@ -80,6 +81,7 @@ def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Findin
     findings.extend(_generate_gnss_findings(report, is_non_slam_domain))
     findings.extend(_generate_imu_findings(report, is_non_slam_domain))
     findings.extend(_generate_sync_findings(report, is_non_slam_domain))
+    findings.extend(generate_stamp_sync_findings(report))
     for plugin in detected_plugins:
         findings.extend(plugin.generate_findings(report))
     findings.extend(_generate_custom_domain_findings(report.custom_domains))

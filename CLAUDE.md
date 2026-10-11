@@ -130,6 +130,12 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - 照合できない場合は従来の近似: 入力と出力が同レートで固定オフセットの場合にのみ正確。異なるレートの場合は近似（例: 50Hz odom → 45ms 遅れの amcl_pose を 5ms と過小評価する）
 - SQLite フォールバックで stamp が取れるのは CDR パーサーのある型のみ（Autoware 独自型は ROS / mcap デコード時のみ）
 
+## header.stamp の sync 診断
+`eval_sync_stamps.py` は eval の既存 sync pair と `_topic_stamps` を使う追加診断（スコア・pair 選択は変更しない）。header 最近傍 mean/P95 に加え、共通記録区間で topic B と A の `median(stamp − record)` の差を出す。密な周期 IMU の最近傍だけでは見えない一定ずれを検出するが、通信・記録遅延も含むので物理的センサー遅延とは断定しない。
+- `sync.header_stamp.<topic_a_token>.<topic_b_token>.*`（category `sync_quality`）の findings と `Header sync:` レコメ。差20ms以上で warning、1s以上なら clock 不一致候補として header 最近傍は出さない。
+- 非ゼロ stamp が5件未満、coverage90%未満、stamp重複・逆行、共通区間不足は `unavailable`。missing を正常判定にしない。
+- `bagx sync` CLI の既存記録時刻指標は変更しない。詳細は `docs/guide/sync.md`。
+
 ## anomaly検出の注意点
 - **IMUトピックは専用検出器**でカバー。`rate_gap`からは除外（二重検出防止）
 - **最低gap閾値**: 50ms未満のgapは報告しない（高レートトピックのジッター誤検出防止）
