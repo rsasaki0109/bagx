@@ -220,13 +220,17 @@ def evaluate_bag(
         topic_name: [] for topic_name in workflow_candidate_topics
     }
 
+    from bagx.msg_checks import MessageCheckAccumulator
     from bagx.tf_tree import TfAccumulator
 
-    tf_accumulator = TfAccumulator({name: info.type for name, info in summary.topics.items()})
+    topic_types = {name: info.type for name, info in summary.topics.items()}
+    tf_accumulator = TfAccumulator(topic_types)
+    msg_accumulator = MessageCheckAccumulator(topic_types)
 
     # Read all messages if we need sync analysis
     for msg in reader.read_messages(topics=None):
         tf_accumulator.add(msg)
+        msg_accumulator.add(msg)
         if msg.topic in topic_timestamps:
             topic_timestamps[msg.topic].append(msg.timestamp_ns)
         if msg.topic in workflow_messages:
@@ -316,6 +320,7 @@ def evaluate_bag(
 
     tf_report = tf_accumulator.build(str(bag_path), bag_end_ns=summary.end_time_ns or None)
     report.findings.extend(tf_report.findings)
+    report.findings.extend(msg_accumulator.build())
     if tf_report.edges:
         tf_summary = tf_report.to_dict()
         tf_summary.pop("findings", None)
@@ -979,17 +984,17 @@ def generate_recommendations(report: EvalReport) -> list[str]:
     for domain in report.custom_domains:
         recs.extend(domain.recommendations)
 
-    # --- TF tree ---
-    tf_issues = [
-        f for f in report.findings
-        if f.category == "tf_tree" and f.severity in ("warning", "error", "critical")
-    ]
-    for finding in tf_issues:
+    # --- TF tree and message content (findings-only checks, no score impact) ---
+    prefixes = {"tf_tree": "TF", "message_content": "Data"}
+    for finding in report.findings:
+        prefix = prefixes.get(finding.category)
+        if prefix is None or finding.severity not in ("warning", "error", "critical"):
+            continue
         marker = (
             "[yellow]:warning:[/yellow]" if finding.severity == "warning"
             else "[red]:x:[/red]"
         )
-        recs.append(f"{marker} TF: {escape(finding.title)}")
+        recs.append(f"{marker} {prefix}: {escape(finding.title)}")
 
     return recs
 

@@ -397,3 +397,75 @@ def test_header_first_parsers_expose_frame_id() -> None:
     gps = _parse_navsatfix(build_navsatfix_cdr(1, 2, 0, 35.0, 139.0, 10.0))
     assert imu["frame_id"] == "imu_link"
     assert gps["frame_id"] == "gps"
+
+
+def test_parse_laser_scan_counts_valid_ranges() -> None:
+    from bagx.reader import _parse_cdr_basic
+    from tests.conftest import build_laser_scan_cdr
+
+    ranges = [1.0, 2.0, float("inf"), float("nan"), 0.05, 50.0, 3.0]
+    msg = _parse_cdr_basic(build_laser_scan_cdr(5, 6, ranges, frame_id="base_scan"),
+                           "sensor_msgs/msg/LaserScan")
+    assert msg["frame_id"] == "base_scan"
+    assert msg["stamp_sec"] == 5
+    assert msg["num_ranges"] == 7
+    assert msg["num_valid_ranges"] == 3
+    assert msg["range_max"] == pytest.approx(30.0)
+    assert "_parse_error" not in msg
+
+
+def test_parse_camera_info() -> None:
+    from bagx.reader import _parse_cdr_basic
+    from tests.conftest import build_camera_info_cdr
+
+    msg = _parse_cdr_basic(build_camera_info_cdr(1, 2, width=1280, height=720, d=[0.1, 0.2]),
+                           "sensor_msgs/msg/CameraInfo")
+    assert (msg["width"], msg["height"]) == (1280, 720)
+    assert msg["distortion_model"] == "plumb_bob"
+    assert msg["d"] == pytest.approx([0.1, 0.2])
+    assert msg["k"][0] == pytest.approx(500.0)
+    assert len(msg["p"]) == 12
+    assert "_parse_error" not in msg
+
+
+def test_parse_image_meta_skips_pixels() -> None:
+    from bagx.reader import _parse_cdr_basic
+    from tests.conftest import build_image_cdr
+
+    msg = _parse_cdr_basic(build_image_cdr(1, 2, width=4, height=2, encoding="bgr8"),
+                           "sensor_msgs/msg/Image")
+    assert (msg["width"], msg["height"], msg["encoding"]) == (4, 2, "bgr8")
+    assert msg["step"] == 12
+    assert msg["data_size"] == 24
+    assert "data" not in msg
+
+
+def test_parse_joint_state() -> None:
+    from bagx.reader import _parse_cdr_basic
+    from tests.conftest import build_joint_state_cdr
+
+    msg = _parse_cdr_basic(build_joint_state_cdr(1, 2, ["j1", "joint_two"], [0.5, -1.0]),
+                           "sensor_msgs/msg/JointState")
+    assert msg["name"] == ["j1", "joint_two"]
+    assert msg["position"] == pytest.approx([0.5, -1.0])
+    assert msg["velocity"] == [] and msg["effort"] == []
+
+
+@pytest.mark.parametrize("msg_type", [
+    "sensor_msgs/msg/LaserScan", "sensor_msgs/msg/CameraInfo",
+    "sensor_msgs/msg/Image", "sensor_msgs/msg/JointState",
+])
+def test_new_parsers_flag_truncated_payloads(msg_type: str) -> None:
+    from bagx.reader import _parse_cdr_basic
+    from tests.conftest import (
+        build_camera_info_cdr, build_image_cdr, build_joint_state_cdr, build_laser_scan_cdr,
+    )
+
+    full = {
+        "sensor_msgs/msg/LaserScan": build_laser_scan_cdr(1, 2, [1.0] * 10),
+        "sensor_msgs/msg/CameraInfo": build_camera_info_cdr(1, 2),
+        "sensor_msgs/msg/Image": build_image_cdr(1, 2, width=2, height=2),
+        "sensor_msgs/msg/JointState": build_joint_state_cdr(1, 2, ["a", "b"]),
+    }[msg_type]
+    msg = _parse_cdr_basic(full[: len(full) // 2 + 10], msg_type)
+    assert msg.get("_parse_error") is True
