@@ -123,7 +123,7 @@ def _write_real_bag(path: Path) -> None:
             fix = NavSatFix(latitude=35.0 + i * 1e-6, longitude=139.0, altitude=10.0)
             fix.header.stamp, fix.header.frame_id = stamp, "gnss_link"
             fix.status.status = 0 if i % 30 else -1
-            fix.position_covariance = [1.0, 0, 0, 0, 1.0, 0, 0, 0, 4.0]
+            fix.position_covariance = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 4.0]
             writer.write("/gnss/fix", serialize_message(fix), t)
             scan = LaserScan(angle_min=-1.5, angle_max=1.5, angle_increment=0.01,
                              range_min=0.1, range_max=10.0,
@@ -138,7 +138,7 @@ def _write_real_bag(path: Path) -> None:
             joints.header.stamp = stamp
             writer.write("/joint_states", serialize_message(joints), t)
             info = CameraInfo(width=4, height=2, distortion_model="plumb_bob",
-                              d=[0.0] * 5, k=[500.0, 0, 2, 0, 500.0, 1, 0, 0, 1])
+                              d=[0.0] * 5, k=[500.0, 0.0, 2.0, 0.0, 500.0, 1.0, 0.0, 0.0, 1.0])
             info.header.stamp, info.header.frame_id = stamp, "camera_optical"
             writer.write("/camera/color/camera_info", serialize_message(info), t)
             image = Image(width=4, height=2, encoding="rgb8", step=12, data=bytes(24))
