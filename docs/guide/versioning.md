@@ -57,7 +57,7 @@ scores.
 
 ## Supported environments
 
-- Python: the versions in the CI matrix (currently 3.10–3.12).
+- Python: the versions in the CI matrix (currently 3.10–3.13).
 - ROS: works without ROS. With ROS 2, CI covers Humble and Jazzy through rosbag2_py.
 - Optional extras (`mcap`, `ros1`, `mcp`, `llm`) are pinned below the next major
   version once a breaking upstream release is seen (e.g. `mcp<2`).

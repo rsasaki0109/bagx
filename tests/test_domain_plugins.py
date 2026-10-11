@@ -77,8 +77,8 @@ def test_entry_point_plugin_loading(monkeypatch: pytest.MonkeyPatch):
             return FakePlugin
 
     monkeypatch.setattr(
-        "bagx.domain_plugins._entry_point_plugins",
-        lambda: [FakePlugin()],
+        "bagx.domain_plugins._md.entry_points",
+        lambda **kwargs: [FakeEntryPoint()],
     )
     topics = {"/fake": {"type": "std_msgs/msg/String", "count": 1, "rate_hz": 1.0}}
     detected = detect_domains(topics)

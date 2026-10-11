@@ -7,6 +7,33 @@ All notable changes to bagx are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Built-in domain plugin readiness findings for Autoware, MoveIt, Perception,
+  RobotArm and Control. Rates use the existing practical targets; each checked
+  stream emits `<domain>.<signal>.<topic_token>.{rate_good,rate_low,rate_unavailable}`.
+  Missing planning/control counterparts, planned paths, execution visibility and
+  camera calibration topics emit documented `*.missing_*` findings. Nav2 ids,
+  scores, report keys and versions are unchanged; new warnings can affect CI
+  severity gates. Sensing-only Autoware recordings do not require planning/control.
+  Public r2b RobotArm (7,916 messages) adds a depth-image rate warning at 14.8 Hz;
+  r2b Whitetunnel (17,632 messages) adds eight healthy image-rate findings at
+  30.3–31.2 Hz. Their default legacy JSON and scores match the prior code.
+- Opt-in `bagx eval --sync-pairing imu` / `EvalConfig(sync_pairing="imu")`:
+  pair the best-scoring active IMU with every eligible sensor; without an IMU,
+  use all adjacent sensor pairs. Secondary LiDARs and right cameras are no
+  longer excluded by the five-pair limit in this mode. Default pairing remains
+  `adjacent`; batch, benchmark and scoreboard retain their existing scores.
+- Python 3.13 support, with the full test / benchmark smoke suite added to CI
+  alongside Python 3.10–3.12 and ROS 2 Humble / Jazzy.
+- `bagx eval` header-stamp sync diagnostics for its existing sensor pairs:
+  header nearest-neighbor mean/P95 plus relative median `stamp − record_time`
+  offsets reveal constant timestamp offsets hidden by dense periodic streams.
+  New `sync_quality` findings are
+  `sync.header_stamp.<topic_a_token>.<topic_b_token>.measured`, `.offset`,
+  `.delay_high`, `.clock_mismatch` and `.unavailable`. Offsets include recording /
+  transport latency and are not a physical sensor-delay measurement. Missing,
+  zero, sparse, repeated or regressing stamps and incompatible clocks are
+  explicitly reported. These add findings / recommendations without changing
+  scores, report keys or versions; severity-based CI gates can see new warnings.
 - `bagx tf`: TF tree validation (multiple parents, cycles, disconnected trees, transforms on
   both `/tf` and `/tf_static`, pauses and early stops, zero or regressing stamps, clock
   mismatches between topics, sensor `frame_id`s missing from the tree, `--require-frames`,
@@ -28,6 +55,26 @@ All notable changes to bagx are documented here. The format follows
   parity tests.
 
 ### Changed
+- Choosing `--sync-pairing imu` can change sync / overall scores and related
+  findings for SLAM, Autoware and perception bags. Nav2 / MoveIt sensor sync
+  remains disabled. For the regression fixture of two 10 Hz cameras offset
+  by 50 ms plus a 200 Hz IMU, sync is 70.96 (`adjacent`) → 100 (`imu`);
+  this is a change in compared pairs, not evidence of hardware alignment.
+  Default public scoreboard rows are unchanged (MID-360 overall 98.7 / sync
+  100, NTU VIRAL overall 84.0 / sync 100). Public NTU VIRAL `eee_03` validation
+  (389,804 messages) expands 5 → 8 pairs, adding the right camera and both
+  node2 streams; overall stays 83.9861 → 83.9861 and sync 100 → 100. The added
+  pairs' header-neighbor means are 1.2751–1.3208 ms, with relative stamp/record
+  offsets −1.4112–+0.1189 ms. Default legacy findings / recommendations match
+  main after excluding the added header diagnostics. Keep the pairing mode fixed in
+  comparisons / CI gates; alternate-mode scores need their own bag evaluation
+  and must not replace the default scoreboard results.
+- Public r2b Whitetunnel validation expands `imu` pairing from 5 → 9 pairs.
+  Overall remains 91.712 → 91.712 and sync 100 → 100; right-stereo left/right
+  streams show header-neighbor means 2.488 ms despite relative stamp/record
+  offsets −41.289 / −42.152 ms, producing `offset` warnings. These are timestamp /
+  transport observations, not measured physical sensor delays. r2b RobotArm
+  stays at overall 95.987 / sync 92.241 in both pairing modes.
 - Report `schema_version` 1.3.0 → 1.4.0. This is additive: eval JSON gains `tf` and new
   finding categories `tf_tree` and `message_content`.
 - `eval.py` is split into `eval_topics`, `eval_workflow`, `eval_latency` and `eval_domains`.
@@ -41,6 +88,23 @@ All notable changes to bagx are documented here. The format follows
   code record `bagx_version` as `X.Y.Z+dev`.
 
 ### Fixed
+- README public-bag examples now match the cached unreleased scoreboard:
+  Autoware bag4 77.9 → 82.8, r2b Galileo 90.5 → 90.9, r2b Whitetunnel 91.3 → 91.7
+  overall. This corrects stale documentation; no scores are recomputed differently.
+- Domain entry-point classes are instantiated correctly, and factory exceptions
+  no longer stop the whole eval. Broken imports, constructors or hooks and
+  invalid plugin results become `plugin.<name_token>.<hook>_failed` **error**
+  findings (`domain_detection`) and `ERROR Plugin:` recommendations. Other checks
+  still run, and benchmark severity gates reject incomplete evaluation. Invalid
+  or colliding plugin names are reported as unavailable rather than duplicating
+  or overriding built-in detection. Healthy-plugin scores and existing findings
+  are unchanged; nine framework fixture JSON reports match the prior code after
+  excluding new readiness findings.
+- Eval JSON serialization no longer recursively copies internal timestamp /
+  header-stamp buffers before discarding them. Public JSON, scores and retained
+  buffers are unchanged; large reports avoid this unnecessary allocation. On
+  the public NTU VIRAL `eee_03` report, traced peak allocations during `to_dict`
+  drop from 27.54 MB to 0.10 MB (not total evaluation memory).
 - Sync score (`bagx eval`, all SLAM / Autoware / perception bags with two or more sensor
   streams): each pair walked whichever topic sorted first by name and took the nearest
   message on the other. For a dense/sparse pair such as 200 Hz IMU ↔ 10 Hz LiDAR this

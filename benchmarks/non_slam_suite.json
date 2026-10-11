@@ -6,7 +6,9 @@
       "bag_path": "${BAGX_REALBAGS}/r2b_galileo",
       "report_type": "eval",
       "expect": {
-        "required_domains": ["Perception"],
+        "required_domains": [
+          "Perception"
+        ],
         "required_recommendations": [
           "Perception topics detected",
           "Camera calibration topics are recorded"
@@ -22,7 +24,9 @@
       "bag_path": "${BAGX_REALBAGS}/r2b_whitetunnel",
       "report_type": "eval",
       "expect": {
-        "required_domains": ["Perception"],
+        "required_domains": [
+          "Perception"
+        ],
         "required_recommendations": [
           "Perception topics detected",
           "Camera calibration topics are recorded"
@@ -30,7 +34,17 @@
         "forbidden_recommendations": [
           "No GNSS data"
         ],
-        "min_domain_score": 95
+        "min_domain_score": 95,
+        "expected_findings": [
+          "perception.image.left_stereo_camera.left.image_compressed.rate_good",
+          "perception.image.left_stereo_camera.right.image_compressed.rate_good",
+          "perception.image.back_stereo_camera.right.image_compressed.rate_good",
+          "perception.image.front_stereo_camera.right.image_compressed.rate_good",
+          "perception.image.front_stereo_camera.left.image_compressed.rate_good",
+          "perception.image.back_stereo_camera.left.image_compressed.rate_good",
+          "perception.image.right_stereo_camera.left.image_compressed.rate_good",
+          "perception.image.right_stereo_camera.right.image_compressed.rate_good"
+        ]
       }
     },
     {
@@ -38,7 +52,9 @@
       "bag_path": "${BAGX_REALBAGS}/r2b_galileo2",
       "report_type": "eval",
       "expect": {
-        "required_domains": ["Perception"],
+        "required_domains": [
+          "Perception"
+        ],
         "required_recommendations": [
           "Perception topics detected",
           "Camera calibration topics are recorded"
@@ -55,11 +71,18 @@
       "bag_path": "${BAGX_REALBAGS}/r2b_robotarm",
       "report_type": "eval",
       "expect": {
-        "required_domains": ["RobotArm"],
+        "required_domains": [
+          "RobotArm"
+        ],
         "required_recommendations": [
           "Robot arm perception/manipulation topics detected"
         ],
-        "min_domain_score": 90
+        "min_domain_score": 90,
+        "expected_findings": [
+          "robotarm.joint_states.joint_states.rate_good",
+          "robotarm.image.camera_1.color.image_raw.rate_good",
+          "robotarm.image.camera_1.aligned_depth_to_color.image_raw.rate_low"
+        ]
       }
     },
     {
@@ -67,11 +90,13 @@
       "bag_path": "../.cache/dogfood/nav2-deep-final-20260324-185315",
       "report_type": "eval",
       "expect": {
-        "required_domains": ["Nav2"],
+        "required_domains": [
+          "Nav2"
+        ],
         "required_recommendations": [
           "Nav2 topics detected",
           "NavigateToPose status",
-          "plan → cmd_vel onset"
+          "plan \u2192 cmd_vel onset"
         ],
         "min_domain_score": 95,
         "min_topic_rates": {
@@ -84,11 +109,13 @@
       "bag_path": "../.cache/dogfood/moveit-exec-final-20260324-185315",
       "report_type": "eval",
       "expect": {
-        "required_domains": ["MoveIt"],
+        "required_domains": [
+          "MoveIt"
+        ],
         "required_recommendations": [
           "MoveIt topics detected",
           "Joint trajectory controller activity recorded",
-          "planned_path → arm execution"
+          "planned_path \u2192 arm execution"
         ],
         "min_domain_score": 95,
         "min_topic_rates": {

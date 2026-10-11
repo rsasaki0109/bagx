@@ -6,8 +6,9 @@
 
 NTU VIRAL is a **multi-sensor drone dataset**: two Ouster OS1 LiDARs, a stereo pair, a
 VN100 IMU, UWB ranging, DJI flight-controller GNSS/IMU, and Leica laser-tracker ground
-truth. On `eee_03` (181 s, 19 topics, 389,804 messages) the time sync is clean and GNSS
-is present, so the score is pulled down by the **IMU at 72.0**.
+truth. On `eee_03` (181 s, 19 topics, 389,804 messages) checked recording-time
+neighbors are close and GNSS is present, so the score is pulled down by the
+**IMU at 72.0**.
 
 | Component | Score | Why |
 |-----------|-------|-----|
@@ -30,15 +31,25 @@ noise densities from the dataset's `imu_v100.yaml` calibration, not from this fl
 
 ## Why sync scores 100
 
-bagx pairs each message of the sparser topic with the nearest message of the denser one.
-Every LiDAR scan and camera frame has an IMU sample within a few milliseconds, which is
-what LiDAR–IMU and visual–inertial pipelines need.
+bagx pairs each message of the sparser topic with the nearest message of the denser one
+using recording time. The default mode checks five adjacent sensor pairs by name;
+it does not cover the right camera or the node2 LiDAR / IMU. A small nearest-neighbor
+distance on a dense periodic stream alone does not establish physical synchronization.
+
+With unreleased `--sync-pairing imu`, the primary `/imu/imu` is paired with all
+eight other eligible streams, including those three. All 389,804 messages were
+evaluated, and **overall 84.0 / sync 100** is unchanged in both modes. The new
+header-stamp diagnostics report usable stamps for all eight pairs. Newly covered
+node2 IMU / LiDAR and right-camera pairs have header-neighbor means of
+**1.275 / 1.321 / 1.276 ms**, respectively, and relative stamp/record offsets of
+**+0.119 / −0.891 / −1.411 ms**. These include transport / recording latency and
+are not physical sensor-delay measurements. See [sync diagnostics](../guide/sync.md#public-multi-sensor-validation).
 
 ## Practical takeaway
 
 | Goal | Recommendation |
 |------|----------------|
-| LiDAR odometry benchmark | Good candidate — sync is clean |
+| LiDAR odometry benchmark | Good candidate — checked record/header neighbors are close; verify the pipeline's timing requirements |
 | LIO with default IMU weights | Expect tuning; inflate accel noise or pre-filter |
 | VIO with raw IMU | Use the provided IMU calibration, not diff-based noise from flight |
 
@@ -49,6 +60,8 @@ curl -L -o eee_03.zip https://researchdata.ntu.edu.sg/api/access/datafile/68132 
 unzip eee_03.zip
 pip install bagx[ros1]
 bagx eval eee_03/eee_03.bag
+# On unreleased code; record the pairing mode when comparing scores:
+bagx eval eee_03/eee_03.bag --sync-pairing imu --json ntu-imu-pairs.json
 ```
 
 Compare with the [Livox MID-360 row](../scoreboard.md) (98.7 overall) for a ground-vehicle

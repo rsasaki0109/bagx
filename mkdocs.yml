@@ -1,6 +1,6 @@
 site_name: bagx
 site_url: https://rsasaki0109.github.io/bagx/
-site_description: Post-processing analysis engine for ROS2 rosbag data
+site_description: Readiness checking and post-processing for ROS 1 and ROS 2 bags
 repo_url: https://github.com/rsasaki0109/bagx
 repo_name: rsasaki0109/bagx
 
@@ -51,12 +51,16 @@ plugins:
 nav:
   - Home: index.md
   - Try in Browser: https://rsasaki0109.github.io/bagx/demo/
-  - Scoreboard: scoreboard.md
+  - Scoreboard:
+      - Dataset scores: scoreboard.md
+      - NTU VIRAL IMU noise: scoreboard/why-ntu-viral-imu-is-noisy.md
+      - EuRoC IMU noise: scoreboard/why-euroc-mh01-imu-is-noisy.md
+      - Autoware bag4 interpretation: scoreboard/why-autoware-all-sensors-bag4-scores-83.md
   - Getting Started: getting-started.md
   - User Guide:
       - eval — Quality Evaluation: guide/eval.md
       - custom-rules — Custom Message Rules: guide/custom-rules.md
-      - domain-plugins — Stack Detection Plugins: guide/domain-plugins.md
+      - domain-plugins — Domain Readiness Plugins: guide/domain-plugins.md
       - compare — Bag Comparison: guide/compare.md
       - sync — Sync Analysis: guide/sync.md
       - tf — TF Tree Validation: guide/tf.md
