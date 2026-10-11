@@ -16,7 +16,7 @@ ruff check bagx/              # lint
 ruff check .                  # テスト含むlint (CIと同じ)
 ```
 
-CI には ROS 2 ジョブ（`ros:humble-ros-base` / `ros:jazzy-ros-base` コンテナ、`--system-site-packages` の venv）があり、.db3 を rosbag2_py 経路で読むテストとバックエンド一致テストを回す。ローカルで再現するなら Ubuntu 24.04 に `ros-jazzy-rosbag2-py` 等を apt で入れ、`source /opt/ros/jazzy/setup.bash` して python3.12 の venv で pytest。
+CI には ROS 2 ジョブ（`ros:humble-ros-base` / `ros:jazzy-ros-base` コンテナ、`--system-site-packages` の venv）があり、.db3 を rosbag2_py 経路で読むテストとバックエンド一致テストを回す。ローカルで再現するなら Ubuntu 24.04 に `ros-jazzy-rosbag2-py` 等を apt で入れ、`source /opt/ros/jazzy/setup.bash` して `python3 -m venv --system-site-packages` の venv で `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest`（ros-base の apt pytest と ROS の pytest プラグインがテスト収集を壊すため）。通常 CI も `mcap` extra を入れる（以前は入っておらず test_mcap.py が CI で常に skip されていた）
 
 ## コマンド一覧
 eval / compare / sync / tf / export / anomaly / scenario / ask / scene / info / batch eval / batch anomaly
