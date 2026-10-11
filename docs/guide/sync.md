@@ -90,6 +90,17 @@ does not imply that other bags will have the same scores in both modes, or prove
 physical synchronization. See the [NTU interpretation](../scoreboard/why-ntu-viral-imu-is-noisy.md)
 for component scores and reproduction commands.
 
+On the official NVIDIA NGC **r2b Whitetunnel** recording (17,632 messages), IMU
+pairing expands **five → nine pairs**: `/front_stereo_imu/imu` against eight
+camera streams and `/chassis/imu`. Both modes retain **91.7 overall / 100 sync**.
+The right stereo camera's left/right streams have header-neighbor means of
+**2.488 ms**, yet relative stamp/record offsets of **−41.289 / −42.152 ms**.
+Those pairs produce `offset` warnings, showing why a close periodic neighbor
+alone cannot establish timing alignment. The offsets include transport and
+recording latency; investigate acquisition and publisher timing before applying
+compensation. The default legacy JSON matches the prior code after excluding
+the new domain readiness findings.
+
 ### Findings
 
 Each pair produces a `sync_quality` finding with an id of the form

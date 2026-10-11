@@ -194,6 +194,10 @@ observed state, so passing states are also benchmark-checkable:
 - `imu.accel_noise.{good,noisy}`, `imu.gyro_noise.{good,noisy}`, `imu.rate.low`
 - `sync.delay.{good,high}`
 - `sync.header_stamp.<topic_a_token>.<topic_b_token>.{measured,offset,delay_high,clock_mismatch,unavailable}`
+- `<domain>.<signal>.<topic_token>.{rate_good,rate_low,rate_unavailable}` and
+  `*.missing_*` for built-in [domain readiness](domain-plugins.md#built-in-readiness-checks)
+- `plugin.<name_token>.{load,detect,representative_topics,generate_findings}_failed`
+  (error; an installed [domain plugin](domain-plugins.md#readiness-hooks-and-failures) did not complete)
 - `nav2.detected`, `nav2.odometry.rate_low`, `nav2.scan.rate_low`, `nav2.cmd_vel.rate_low`
 - `nav2.missing_cmd_vel`, `nav2.missing_global_plan`, `nav2.missing_navigate_to_pose`
 - `gnss.missing`, `imu.missing`, `gnss.hdop.high`

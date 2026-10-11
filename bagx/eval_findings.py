@@ -35,7 +35,10 @@ from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
 
-from bagx.domain_plugins import detect_domains, discover_domain_plugins
+from bagx.domain_plugins import (
+    detect_domains, discover_domain_plugins, _plugin_load_findings,
+    _plugin_readiness_findings, _plugin_representative_topics,
+)
 from bagx.eval_sync_stamps import generate_stamp_sync_findings
 from bagx.findings import Evidence, Finding, clean_topic_token, finding_id
 
@@ -56,7 +59,8 @@ def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Findin
     findings: list[Finding] = []
     topics = report.topic_info
     plugins = discover_domain_plugins()
-    detected_plugins = detect_domains(topics, plugins) if topics else []
+    findings.extend(_plugin_load_findings(plugins))
+    detected_plugins = detect_domains(topics, plugins, failures=findings) if topics else []
     detected_names = {plugin.name for plugin in detected_plugins}
     # Honour legacy callers that hand us a precomputed domain set (e.g.
     # custom-domain-only bags where the topic_info would not match a built-in
@@ -72,7 +76,7 @@ def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Findin
                 severity="info",
                 category="domain_detection",
                 domain=domain_id,
-                affected_topics=plugin.representative_topics(topics),
+                affected_topics=_plugin_representative_topics(plugin, topics, findings),
                 evidence=[Evidence(metric="domain_detected", observed=True, expected=True)],
                 confidence="high",
             )
@@ -83,7 +87,7 @@ def generate_findings(report: EvalReport, domain_names: set[str]) -> list[Findin
     findings.extend(_generate_sync_findings(report, is_non_slam_domain))
     findings.extend(generate_stamp_sync_findings(report))
     for plugin in detected_plugins:
-        findings.extend(plugin.generate_findings(report))
+        findings.extend(_plugin_readiness_findings(plugin, report))
     findings.extend(_generate_custom_domain_findings(report.custom_domains))
     findings.extend(_generate_workflow_findings(report.workflow_metrics))
 

@@ -7,6 +7,16 @@ All notable changes to bagx are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Built-in domain plugin readiness findings for Autoware, MoveIt, Perception,
+  RobotArm and Control. Rates use the existing practical targets; each checked
+  stream emits `<domain>.<signal>.<topic_token>.{rate_good,rate_low,rate_unavailable}`.
+  Missing planning/control counterparts, planned paths, execution visibility and
+  camera calibration topics emit documented `*.missing_*` findings. Nav2 ids,
+  scores, report keys and versions are unchanged; new warnings can affect CI
+  severity gates. Sensing-only Autoware recordings do not require planning/control.
+  Public r2b RobotArm (7,916 messages) adds a depth-image rate warning at 14.8 Hz;
+  r2b Whitetunnel (17,632 messages) adds eight healthy image-rate findings at
+  30.3–31.2 Hz. Their default legacy JSON and scores match the prior code.
 - Opt-in `bagx eval --sync-pairing imu` / `EvalConfig(sync_pairing="imu")`:
   pair the best-scoring active IMU with every eligible sensor; without an IMU,
   use all adjacent sensor pairs. Secondary LiDARs and right cameras are no
@@ -59,6 +69,12 @@ All notable changes to bagx are documented here. The format follows
   main after excluding the added header diagnostics. Keep the pairing mode fixed in
   comparisons / CI gates; alternate-mode scores need their own bag evaluation
   and must not replace the default scoreboard results.
+- Public r2b Whitetunnel validation expands `imu` pairing from 5 → 9 pairs.
+  Overall remains 91.712 → 91.712 and sync 100 → 100; right-stereo left/right
+  streams show header-neighbor means 2.488 ms despite relative stamp/record
+  offsets −41.289 / −42.152 ms, producing `offset` warnings. These are timestamp /
+  transport observations, not measured physical sensor delays. r2b RobotArm
+  stays at overall 95.987 / sync 92.241 in both pairing modes.
 - Report `schema_version` 1.3.0 → 1.4.0. This is additive: eval JSON gains `tf` and new
   finding categories `tf_tree` and `message_content`.
 - `eval.py` is split into `eval_topics`, `eval_workflow`, `eval_latency` and `eval_domains`.
@@ -72,6 +88,18 @@ All notable changes to bagx are documented here. The format follows
   code record `bagx_version` as `X.Y.Z+dev`.
 
 ### Fixed
+- README public-bag examples now match the cached unreleased scoreboard:
+  Autoware bag4 77.9 → 82.8, r2b Galileo 90.5 → 90.9, r2b Whitetunnel 91.3 → 91.7
+  overall. This corrects stale documentation; no scores are recomputed differently.
+- Domain entry-point classes are instantiated correctly, and factory exceptions
+  no longer stop the whole eval. Broken imports, constructors or hooks and
+  invalid plugin results become `plugin.<name_token>.<hook>_failed` **error**
+  findings (`domain_detection`) and `ERROR Plugin:` recommendations. Other checks
+  still run, and benchmark severity gates reject incomplete evaluation. Invalid
+  or colliding plugin names are reported as unavailable rather than duplicating
+  or overriding built-in detection. Healthy-plugin scores and existing findings
+  are unchanged; nine framework fixture JSON reports match the prior code after
+  excluding new readiness findings.
 - Eval JSON serialization no longer recursively copies internal timestamp /
   header-stamp buffers before discarding them. Public JSON, scores and retained
   buffers are unchanged; large reports avoid this unnecessary allocation. On

@@ -77,6 +77,9 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - **周波数計算**: duration/count 方式 (バーストタイムスタンプ対応)
 
 ## フレームワーク自動検出
+
+`domain_plugins.py` は class / factory / instance の entry point を読み込む。失敗・不正な返却値は `plugin.<name_token>.<hook>_failed` error finding と `ERROR Plugin:` レコメにする（残りの評価は続行、severity gate で拒否）。builtin と衝突する名前は unavailable。`domain_findings.py` の builtin readiness hooks は Autoware / MoveIt / Perception / RobotArm / Control の既存レート目標と欠落 topic を structured findings にする。スコア・Nav2 の既存 ID は変えない。SDK の返却型・ID・対象は `docs/guide/domain-plugins.md`。
+
 `eval_domains.py` の `_detect_domain_recommendations()` でトピック名/型からフレームワークを判定:
 
 ### Nav2 検出
@@ -137,6 +140,7 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - 非ゼロ stamp が5件未満、coverage90%未満、stamp重複・逆行、共通区間不足は `unavailable`。missing を正常判定にしない。
 - `bagx sync` CLI の既存記録時刻指標は変更しない。詳細は `docs/guide/sync.md`。
 - NTU VIRAL `eee_03` 全389,804件で main と既定の score / 既存 findings・レコメが一致（header 追加分を除く）。`imu` mode は5→8組で右カメラ・node2 IMU/points も対象、Overall 84.0 / Sync 100 は維持。追加組の header 最近傍 mean は1.275〜1.321ms、相対 stamp/record offset は−1.411〜+0.119ms。
+- NVIDIA NGC `r2bdataset2024` v1 の robotarm (7,916件) / whitetunnel (17,632件) は domain readiness 追加分以外の JSON が旧コードと一致。robotarm depth は14.8Hz warning、whitetunnel 全8画像は30.3〜31.2Hz info。whitetunnel `imu` mode は5→9組、Overall91.712 / Sync100維持、右stereoの相対 stamp/record offset −41.289 / −42.152ms（header NN mean2.488ms）。通信・記録遅延も含むため物理的ずれとは断定しない。
 
 ## anomaly検出の注意点
 - **IMUトピックは専用検出器**でカバー。`rate_gap`からは除外（二重検出防止）

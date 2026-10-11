@@ -229,12 +229,15 @@ bagx is dogfooded against:
 
 Recent dogfood runs:
 
+Public-bag scores below follow the [cached scoreboard](docs/scoreboard.md) on
+unreleased code (`0.6.0+dev`); simulator captures retain their run names.
+
 - `nav2-deep-final-20260324-185315`: `Overall 100.0/100`, `LaserScan 13Hz`, `plan → cmd_vel onset 11ms median`
 - `moveit-exec-final-20260324-185315`: `Overall 100.0/100`, `JointState 115Hz`, `planned_path → arm execution 5ms median`
-- `autoware_isuzu_all_sensors_bag4`: real bag, `Overall 77.9/100` (domain 95.0; IMU noise and camera sync pull it down), plus a sensing-only note when planning/control topics are absent
+- `autoware_isuzu_all_sensors_bag4`: real bag, `Overall 82.8/100` (domain 95.0; IMU noise and camera sync pull it down), plus a sensing-only note when planning/control topics are absent
 - `driving_20_kmh_2022_06_10-16_01_55_compressed`: official Autoware open-data bag, `Overall 99.0/100`, LiDAR packet sync and `/vehicle/status/velocity_status` captured
-- `r2b_galileo`: official NVIDIA open-data MCAP, `Overall 90.5/100`, eight compressed camera streams plus IMU and chassis odom
-- `r2b_whitetunnel`: official NVIDIA open-data MCAP, `Overall 91.3/100`, eight compressed camera streams plus IMU and camera calibration coverage
+- `r2b_galileo`: official NVIDIA open-data MCAP, `Overall 90.9/100`, eight compressed camera streams plus IMU and chassis odom
+- `r2b_whitetunnel`: official NVIDIA open-data MCAP, `Overall 91.7/100`, eight compressed camera streams plus IMU and camera calibration coverage
 - `r2b_robotarm`: official NVIDIA open-data MCAP, `Overall 96.0/100`, RGB-D + joint-state manipulation perception checks
 - `r2b_galileo2`: official NVIDIA open-data MCAP, `Overall 97.5/100`, camera-only RGB-D perception checks without SLAM-specific false advice
 

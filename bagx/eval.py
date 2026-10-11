@@ -1013,6 +1013,9 @@ def generate_recommendations(report: EvalReport) -> list[str]:
             )
             recs.append(f"{marker} Header sync: {escape(finding.title)}")
             continue
+        if finding.id.startswith("plugin.") and finding.severity == "error":
+            recs.append(f"[red]ERROR[/red] Plugin: {escape(finding.title)}")
+            continue
         prefix = prefixes.get(finding.category)
         if prefix is None or finding.severity not in ("warning", "error", "critical"):
             continue
