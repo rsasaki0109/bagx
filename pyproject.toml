@@ -23,7 +23,9 @@ dependencies = [
     "rich>=13.0.0",
     "numpy>=1.24.0",
     "pandas>=2.0.0",
-    "pyarrow>=14.0.0",
+    # pyarrow 26 needs NumPy 2 at import time without declaring it; ROS 2 Jazzy and
+    # Humble ship NumPy 1.x, where `bagx export` would fail to import pyarrow.
+    "pyarrow>=14.0.0,<26",
 ]
 
 [project.optional-dependencies]
