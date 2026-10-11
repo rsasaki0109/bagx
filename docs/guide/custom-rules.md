@@ -74,7 +74,7 @@ thresholds, and non-numeric latency/rate values.
 }
 ```
 
-See [examples/custom_rules/warehouse_bot.json](bagx/examples/custom_rules/warehouse_bot.json) for a complete example.
+See [examples/custom_rules/warehouse_bot.json](https://github.com/rsasaki0109/bagx/blob/main/examples/custom_rules/warehouse_bot.json) for a complete example.
 
 ## Plugin distribution
 
