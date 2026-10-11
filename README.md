@@ -22,8 +22,9 @@ bagx eval your_bag.db3
   <img src="docs/eval_demo.svg" alt="bagx eval output" width="700">
 </p>
 
-bagx checks topic presence, rates, gaps, sensor sync, approximate pipeline
-latency, workflow outcomes, and domain-specific readiness signals:
+bagx checks topic presence, rates, gaps, sensor sync, TF tree, message content,
+pipeline latency (exact when header stamps propagate), workflow outcomes, and
+domain-specific readiness signals:
 
 - **SLAM readiness**: IMU noise, GNSS quality, LiDAR↔IMU sync, and whether LIO is a bad idea
 - **Navigation/control readiness**: odom / scan / costmap rates, goal observability, and `plan → cmd_vel` latency

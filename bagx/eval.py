@@ -128,6 +128,8 @@ class EvalReport:
     findings: list[Finding] = field(default_factory=list)
     tf: dict | None = None  # TF tree summary (frames, roots, edges); None without /tf
     _topic_timestamps: dict = field(default_factory=dict, repr=False)  # internal, not serialized
+    # internal: {topic: [(record_ns, header_stamp_ns)]} for topics whose messages carry a stamp
+    _topic_stamps: dict = field(default_factory=dict, repr=False)
 
     def to_dict(self) -> dict:
         if not self.findings:
@@ -138,6 +140,7 @@ class EvalReport:
         d = asdict(self)
         # Remove internal fields
         d.pop("_topic_timestamps", None)
+        d.pop("_topic_stamps", None)
         # Clean up NaN for JSON
         d = _clean_nan(d)
         for custom_domain in d.get("custom_domains", []):
@@ -216,6 +219,7 @@ def evaluate_bag(
     gnss_messages: list[Message] = []
     imu_messages_by_topic: dict[str, list[Message]] = {t: [] for t in imu_topics}
     topic_timestamps: dict[str, list[int]] = {t: [] for t in all_topics}
+    topic_stamps: dict[str, list[tuple[int, int]]] = {}
     workflow_messages: dict[str, list[dict[str, Any]]] = {
         topic_name: [] for topic_name in workflow_candidate_topics
     }
@@ -231,6 +235,12 @@ def evaluate_bag(
     for msg in reader.read_messages(topics=None):
         tf_accumulator.add(msg)
         msg_accumulator.add(msg)
+        if isinstance(msg.data, dict) and "stamp_sec" in msg.data:
+            stamp_ns = (
+                int(msg.data["stamp_sec"]) * 1_000_000_000 + int(msg.data.get("stamp_nanosec", 0))
+            )
+            if stamp_ns:
+                topic_stamps.setdefault(msg.topic, []).append((msg.timestamp_ns, stamp_ns))
         if msg.topic in topic_timestamps:
             topic_timestamps[msg.topic].append(msg.timestamp_ns)
         if msg.topic in workflow_messages:
@@ -267,6 +277,7 @@ def evaluate_bag(
 
     # Store timestamps for domain-specific pipeline latency analysis
     report._topic_timestamps = topic_timestamps
+    report._topic_stamps = topic_stamps
 
     # Build topic info with rates for domain detection
     for name, info in summary.topics.items():
