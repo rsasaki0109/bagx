@@ -54,7 +54,7 @@ The repository ships ready-made suites:
 
 - `benchmarks/open_data_suite.json`: public Autoware + NVIDIA bags
 - `benchmarks/non_slam_suite.json`: perception/manipulation plus optional local Nav2 / MoveIt dogfood bags
-- `benchmarks/scoreboard.json`: **30 public datasets** for the [Scoreboard](../scoreboard.md) page
+- `benchmarks/scoreboard.json`: **30 datasets** (public + labeled simulator captures) for the [Scoreboard](../scoreboard.md) page; `python scripts/generate_scoreboard.py --check` validates it
 
 Regenerate the docs table after scoring local bags:
 
