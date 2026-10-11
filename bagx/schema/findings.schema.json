@@ -25,7 +25,7 @@
     },
     "category": {
       "type": "string",
-      "description": "Coarse grouping. Built-in values: domain_detection, sensor_quality, topic_presence, rate_quality, sync_quality, workflow_observability, workflow_outcome, custom_rules. Plugins may introduce additional categories.",
+      "description": "Coarse grouping. Built-in values: domain_detection, sensor_quality, topic_presence, rate_quality, sync_quality, tf_tree, workflow_observability, workflow_outcome, custom_rules. Plugins may introduce additional categories.",
       "minLength": 1
     },
     "domain": {

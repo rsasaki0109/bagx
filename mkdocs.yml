@@ -57,6 +57,7 @@ nav:
       - domain-plugins — Stack Detection Plugins: guide/domain-plugins.md
       - compare — Bag Comparison: guide/compare.md
       - sync — Sync Analysis: guide/sync.md
+      - tf — TF Tree Validation: guide/tf.md
       - export — Data Export: guide/export.md
       - anomaly — Anomaly Detection: guide/anomaly.md
       - scenario — Scene Extraction: guide/scenario.md

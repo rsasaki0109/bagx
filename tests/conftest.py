@@ -112,6 +112,7 @@ def build_imu_cdr(
     accel: tuple[float, float, float] = (0.0, 0.0, 9.81),
     gyro: tuple[float, float, float] = (0.0, 0.0, 0.0),
     orientation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
+    frame_id: str = "imu",
 ) -> bytes:
     """Build a fake CDR-encoded Imu message."""
     # CDR header
@@ -119,7 +120,7 @@ def build_imu_cdr(
     # Header stamp
     buf += struct.pack("<II", stamp_sec, stamp_nanosec)
     # frame_id
-    frame_id = b"imu\x00"
+    frame_id = frame_id.encode() + b"\x00"
     buf += struct.pack("<I", len(frame_id))
     buf += frame_id
     # Align payload to 8 for doubles

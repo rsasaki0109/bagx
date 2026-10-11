@@ -40,6 +40,7 @@ def eval_bag_report(path: str) -> dict[str, Any]:
         "gnss": data.get("gnss"),
         "imu": data.get("imu"),
         "sync": data.get("sync"),
+        "tf": data.get("tf"),
         "schema_version": data.get("schema_version"),
         "report_type": data.get("report_type"),
         "bagx_version": data.get("bagx_version"),
@@ -59,6 +60,13 @@ def detect_anomalies_report(path: str, topic: str | None = None) -> dict[str, An
 
     topics = [topic] if topic else None
     return detect_anomalies(path, topics=topics).to_dict()
+
+
+def check_tf_report(path: str, required_frames: list[str] | None = None) -> dict[str, Any]:
+    """Validate the TF tree (/tf, /tf_static) and return edges + findings."""
+    from bagx.tf_tree import analyze_tf
+
+    return analyze_tf(path, required_frames=required_frames).to_dict()
 
 
 def compare_bags_report(path_a: str, path_b: str) -> dict[str, Any]:
@@ -103,7 +111,7 @@ def create_mcp_server() -> FastMCP:
         "bagx",
         instructions=(
             "Analyze ROS1/ROS2 rosbag files: eval quality, list topics, "
-            "detect anomalies, compare bags, and query decoded messages. "
+            "detect anomalies, check the TF tree, compare bags, and query decoded messages. "
             "No LLM keys needed — return structured JSON for the host agent."
         ),
     )
@@ -122,6 +130,15 @@ def create_mcp_server() -> FastMCP:
     def detect_anomalies(path: str, topic: str | None = None) -> dict[str, Any]:
         """Detect GNSS/IMU/rate anomalies; optionally restrict to one topic."""
         return detect_anomalies_report(path, topic=topic)
+
+    @mcp.tool()
+    def check_tf(path: str, required_frames: list[str] | None = None) -> dict[str, Any]:
+        """Validate the TF tree: multiple parents, cycles, gaps, clock mismatches, missing frames.
+
+        required_frames is an optional frame chain (e.g. ["map", "odom", "base_link"]) that
+        must exist and be connected.
+        """
+        return check_tf_report(path, required_frames=required_frames)
 
     @mcp.tool()
     def compare_bags(path_a: str, path_b: str) -> dict[str, Any]:

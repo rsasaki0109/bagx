@@ -17,7 +17,7 @@ ruff check .                  # テスト含むlint (CIと同じ)
 ```
 
 ## コマンド一覧
-eval / compare / sync / export / anomaly / scenario / ask / scene / info / batch eval / batch anomaly
+eval / compare / sync / tf / export / anomaly / scenario / ask / scene / info / batch eval / batch anomaly
 
 CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 
@@ -51,6 +51,8 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 - geometry_msgs/msg/TwistStamped
 - tf2_msgs/msg/TFMessage
 - std_msgs/msg/Header
+
+Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `frame_id` も返す（TF の frame 照合用）。
 
 テスト用CDRビルダーは `tests/conftest.py` にあり、ペイロードアラインメント(`_payload_align`)に注意。
 
@@ -91,6 +93,16 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 ### ドメイン間の干渉防止
 - Nav2/Autoware/MoveIt検出時、SLAM固有のレコメ（「No IMU → KISS-ICP推奨」等）を抑制
 - IMU noisy警告はドメインに応じてメッセージを変更（SLAM: "LiDAR-only推奨" / 他: "IMUキャリブ確認"）
+
+## TF ツリー検証
+`bagx/tf_tree.py`（`bagx tf` / eval に統合 / MCP `check_tf`）:
+- `TfAccumulator` を eval の単一 read パスに流す（2回目の読み込みなし）。frame 収集済み/frameless のトピックは早期 return（オーバーヘッド対策）
+- チェック: 複数 parent / cycle / 分断ツリー / static+dynamic 重複 / 動的 edge の gap・途中停止 / stamp 0・逆行 / sensor frame_id の欠落 / `--require-frames`
+- edge ごとにストリーミング統計（count/first/last/max gap/stamp 0・逆行数）のみ保持し、タイムスタンプ列はメモリに持たない。通常間隔は duration/count（burst タイムスタンプ対応）
+- gap は同一 publisher の edge を time_range でグループ化して1件にまとめる
+- clock チェック: トピックごとに median(header.stamp − 記録時刻) を取り、1s 以内でクラスタリング。最大クラスタが基準、同数なら `tf.clock_split` を1件
+- TF findings はスコアに影響しない（findings と `TF:` 付きレコメのみ）。`report.tf` にツリー要約
+- 実データ所見: bag4 は GNSS/TF が GPS time-of-week、r2b_galileo は `*_optical` が2 parent、r2b_robotarm は arm TF が5.2s停止
 
 ## パイプライン遅延計測
 `eval.py` の `_add_pipeline_latency_recs()`:
@@ -159,7 +171,8 @@ EuRoC MH_01 は `robotics.ethz.ch` が不通の環境では ETH Research Collect
 ## MCP サーバー (P5)
 - `pip install bagx[mcp]` — `mcp` Python SDK（LLM キー不要）
 - `bagx mcp` — stdio MCP server
-- Tools: `eval_bag`, `list_topics`, `detect_anomalies`, `compare_bags`, `query_messages`
+- Tools: `eval_bag`, `list_topics`, `detect_anomalies`, `check_tf`, `compare_bags`, `query_messages`
+- `mcp<2` に固定（2.x で `FastMCP` が `MCPServer` に改名され import が壊れ、テストも skip される）
 - `query_messages` / `list_bag_topics` は `ask.py` のヘルパーを再利用
 - 設定例: `claude mcp add bagx -- bagx mcp`（`docs/guide/mcp.md`）
 

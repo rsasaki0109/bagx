@@ -487,6 +487,56 @@ def sync(
 
 
 @app.command()
+def tf(
+    bag: str = typer.Argument(..., help="Path to the bag file"),
+    json_output: Optional[str] = typer.Option(
+        None, "--json", "-j", help="Output JSON report to file"
+    ),
+    require_frames: Optional[str] = typer.Option(
+        None,
+        "--require-frames",
+        help="Comma-separated frame chain that must exist and be connected, e.g. map,odom,base_link",
+    ),
+    fail_on: Optional[str] = typer.Option(
+        None,
+        "--fail-on",
+        help="Exit with code 1 when a finding at or above this severity exists: "
+        "info, warning, error",
+    ),
+) -> None:
+    """Validate the TF tree recorded in /tf and /tf_static.
+
+    Reports frames with multiple parents, cycles, disconnected trees, dynamic
+    transforms that pause or stop, clock mismatches between TF and sensor
+    stamps, and sensor frame_ids missing from the tree.
+    """
+    from bagx.findings import SEVERITY_ORDER, severity_at_least
+    from bagx.tf_tree import analyze_tf, print_tf_report
+
+    if fail_on and fail_on not in SEVERITY_ORDER:
+        console.print(f"[red]Unknown severity for --fail-on: {fail_on}[/red]")
+        raise typer.Exit(1)
+    frames = [f.strip() for f in require_frames.split(",")] if require_frames else None
+
+    try:
+        report = analyze_tf(bag, required_frames=frames)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error analyzing TF: {e}[/red]")
+        raise typer.Exit(1)
+
+    print_tf_report(report, console)
+    if json_output:
+        with open(json_output, "w") as f:
+            json.dump(report.to_dict(), f, indent=2)
+        console.print(f"JSON report saved to: [cyan]{json_output}[/cyan]")
+    if fail_on and any(severity_at_least(f.severity, fail_on) for f in report.findings):
+        raise typer.Exit(1)
+
+
+@app.command()
 def export(
     bag: str = typer.Argument(..., help="Path to the bag file"),
     output_dir: str = typer.Option("./export", "--output", "-o", help="Output directory"),

@@ -9,6 +9,7 @@ import pytest
 from bagx.ask import list_bag_topics, query_messages
 from bagx.mcp_server import (
     HAS_MCP,
+    check_tf_report,
     compare_bags_report,
     detect_anomalies_report,
     eval_bag_report,
@@ -96,6 +97,12 @@ def test_query_messages_report(gnss_bag: Path) -> None:
     assert len(report["messages"]) == 3
 
 
+def test_check_tf_report(tf_bag: Path) -> None:
+    report = check_tf_report(str(tf_bag), required_frames=["map", "base_link"])
+    assert report["frames"] == ["base_link", "map"]
+    assert not any(f["severity"] == "error" for f in report["findings"])
+
+
 def test_create_mcp_server_registers_tools() -> None:
     from bagx.mcp_server import create_mcp_server
 
@@ -105,6 +112,7 @@ def test_create_mcp_server_registers_tools() -> None:
         "eval_bag",
         "list_topics",
         "detect_anomalies",
+        "check_tf",
         "compare_bags",
         "query_messages",
     }

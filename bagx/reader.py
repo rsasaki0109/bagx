@@ -847,6 +847,11 @@ def _read_std_header_from_buf(buf: bytes, pos: int, endian: str) -> tuple[dict, 
     }, pos
 
 
+def _cdr_frame_id(buf: bytes, frame_id_len: int) -> str:
+    """Decode the Header.frame_id string that starts at byte 12 of a CDR payload."""
+    return buf[12 : 12 + frame_id_len].rstrip(b"\x00").decode("utf-8", errors="replace")
+
+
 def _parse_navsatfix(data: bytes) -> dict:
     """Parse sensor_msgs/msg/NavSatFix from CDR."""
     offset, endian = _read_cdr_header(data)
@@ -920,6 +925,7 @@ def _parse_navsatfix(data: bytes) -> dict:
     return {
         "stamp_sec": sec,
         "stamp_nanosec": nanosec,
+        "frame_id": _cdr_frame_id(buf, frame_id_len),
         "status": status,
         "service": service,
         "latitude": latitude,
@@ -957,7 +963,11 @@ def _parse_imu(data: bytes) -> dict:
     pos = 12 + frame_id_len
     pos = (pos + 7) & ~7  # align to 8 for doubles
 
-    result = {"stamp_sec": sec, "stamp_nanosec": nanosec}
+    result = {
+        "stamp_sec": sec,
+        "stamp_nanosec": nanosec,
+        "frame_id": _cdr_frame_id(buf, frame_id_len),
+    }
 
     # orientation: x,y,z,w (4 doubles)
     if len(buf) >= pos + 32:
@@ -1012,8 +1022,12 @@ def _parse_header(data: bytes) -> dict:
     buf = data[offset:]
     if len(buf) < 8:
         return {"_raw_size": len(data)}
-    sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
-    return {"stamp_sec": sec, "stamp_nanosec": nanosec}
+    try:
+        header, _ = _read_std_header_from_buf(buf, 0, endian)
+    except ValueError:
+        sec, nanosec = struct.unpack_from(f"{endian}II", buf, 0)
+        return {"stamp_sec": sec, "stamp_nanosec": nanosec}
+    return header
 
 
 def _parse_pose_stamped(data: bytes) -> dict:
@@ -1041,7 +1055,11 @@ def _parse_pose_stamped(data: bytes) -> dict:
     pos = 12 + frame_id_len
     pos = (pos + 7) & ~7
 
-    result = {"stamp_sec": sec, "stamp_nanosec": nanosec}
+    result = {
+        "stamp_sec": sec,
+        "stamp_nanosec": nanosec,
+        "frame_id": _cdr_frame_id(buf, frame_id_len),
+    }
 
     if len(buf) >= pos + 56:
         px, py, pz = struct.unpack_from(
@@ -1255,6 +1273,7 @@ def _parse_pointcloud2_meta(data: bytes) -> dict:
     result = {
         "stamp_sec": sec,
         "stamp_nanosec": nanosec,
+        "frame_id": _cdr_frame_id(buf, frame_id_len),
         "_raw_size": len(data),
     }
 
