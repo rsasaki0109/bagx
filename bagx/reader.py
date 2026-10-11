@@ -11,6 +11,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import array
 import struct
 import subprocess
 import tempfile
@@ -99,22 +100,44 @@ class BagSummary:
         return self.duration_ns / 1e9
 
 
+# Message types whose payload is too large to decode per message. Every backend
+# reads them with the metadata-only CDR parser, matching the SQLite fallback.
+HEAVY_MSG_TYPES = {
+    "sensor_msgs/msg/PointCloud2",
+    "sensor_msgs/msg/Image",
+    "sensor_msgs/msg/CompressedImage",
+}
+
+
 def _msg_object_to_dict(value) -> dict | list | str | int | float | bool | None:
     """Convert a ROS message object (ROS2 or rosbags) to plain Python values."""
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, (str, int, float, bool, bytes)):
         return value
+    if isinstance(value, (bytearray, memoryview)):
+        return bytes(value)
     if isinstance(value, np.ndarray):
-        return value.tolist()
+        # Byte buffers stay bytes: a list of Python ints costs ~30x the memory.
+        return value.tobytes() if value.dtype == np.uint8 else value.tolist()
+    if isinstance(value, array.array):
+        return value.tobytes() if value.typecode in ("B", "b") else value.tolist()
     if isinstance(value, dict):
         return {k: _msg_object_to_dict(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_msg_object_to_dict(item) for item in value]
 
-    # ROS2 messages use __slots__; rosbags messages use __annotations__.
+    # rosidl-generated ROS 2 messages list their fields explicitly; their
+    # __slots__ also hold internals such as _check_fields (Jazzy+).
+    get_fields = getattr(value, "get_fields_and_field_types", None)
+    if callable(get_fields):
+        return {name: _msg_object_to_dict(getattr(value, name)) for name in get_fields()}
+
+    # Other ROS2 message classes use __slots__; rosbags messages use __annotations__.
     if hasattr(value, "__slots__"):
         result = {}
         for slot in value.__slots__:
             attr_name = slot.lstrip("_")
+            if not hasattr(value, attr_name):
+                continue
             result[attr_name] = _msg_object_to_dict(getattr(value, attr_name))
         return result
 
@@ -304,13 +327,17 @@ class BagReader:
         while reader.has_next():
             topic, raw_data, timestamp_ns = reader.read_next()
             msg_type_str = topic_type_map.get(topic, "")
-            try:
-                msg_type = get_message(msg_type_str)
-                msg = deserialize_message(raw_data, msg_type)
-                data = _ros_msg_to_dict(msg)
-            except Exception:
-                # Fall back to basic CDR parser for known types
+            if msg_type_str in HEAVY_MSG_TYPES:
                 data = _parse_cdr_basic(raw_data, msg_type_str)
+            else:
+                try:
+                    msg_type = get_message(msg_type_str)
+                    msg = deserialize_message(raw_data, msg_type)
+                    data = _normalize_msg_data(msg_type_str, _ros_msg_to_dict(msg))
+                except Exception as exc:
+                    logger.debug("ROS deserialize failed for %s (%s): %s", topic, msg_type_str, exc)
+                    # Fall back to basic CDR parser for known types
+                    data = _parse_cdr_basic(raw_data, msg_type_str)
 
             yield Message(
                 topic=topic, timestamp_ns=timestamp_ns, data=data
@@ -439,8 +466,10 @@ class BagReader:
                 topic_name = channel.topic
                 msg_type = schema.name if schema else ""
                 try:
-                    if decoded_msg is not None:
-                        data = _ros_msg_to_dict(decoded_msg)
+                    if msg_type in HEAVY_MSG_TYPES:
+                        data = _parse_cdr_basic(message.data, msg_type)
+                    elif decoded_msg is not None:
+                        data = _normalize_msg_data(msg_type, _ros_msg_to_dict(decoded_msg))
                     else:
                         data = _parse_cdr_basic(
                             message.data, msg_type
@@ -882,12 +911,11 @@ def _parse_navsatfix(data: bytes) -> dict:
             "stamp_nanosec": nanosec,
             "_parse_error": True,
         }
+    # NavSatStatus starts right after frame_id: an int8 needs no alignment, so
+    # padding to 4 here would misread status for most frame_id lengths.
     pos = 12 + frame_id_len
-    # Align to 4 bytes
-    pos = (pos + 3) & ~3
-
-    # NavSatStatus: status (i8) + service (u16)
-    if len(buf) < pos + 4:
+    service_pos = (pos + 1 + 1) & ~1  # uint16 aligned to 2
+    if len(buf) < service_pos + 2:
         return {
             "_raw_size": len(data),
             "stamp_sec": sec,
@@ -895,9 +923,8 @@ def _parse_navsatfix(data: bytes) -> dict:
         }
 
     status = struct.unpack_from(f"{endian}b", buf, pos)[0]
-    pos = (pos + 2 + 1) & ~1  # align
-    service = struct.unpack_from(f"{endian}H", buf, pos)[0]
-    pos += 2
+    service = struct.unpack_from(f"{endian}H", buf, service_pos)[0]
+    pos = service_pos + 2
     # Align to 8 bytes for doubles
     pos = (pos + 7) & ~7
 

@@ -80,6 +80,7 @@ def build_navsatfix_cdr(
     longitude: float,
     altitude: float,
     hdop_squared: float = 1.0,
+    frame_id: str = "gps",
 ) -> bytes:
     """Build a fake CDR-encoded NavSatFix message."""
     # CDR header (little-endian)
@@ -87,10 +88,10 @@ def build_navsatfix_cdr(
     # Header stamp
     buf += struct.pack("<II", stamp_sec, stamp_nanosec)
     # frame_id: length + string + null
-    frame_id = b"gps\x00"
-    buf += struct.pack("<I", len(frame_id))
-    buf += frame_id
-    # NavSatStatus: status (i8) + padding + service (u16)
+    frame = frame_id.encode() + b"\x00"
+    buf += struct.pack("<I", len(frame))
+    buf += frame
+    # NavSatStatus: status (i8) right after the string, padding, service (u16)
     buf += struct.pack("<b", status)
     buf = _payload_align(buf, 2)  # align for u16
     buf += struct.pack("<H", 1)  # SERVICE_GPS

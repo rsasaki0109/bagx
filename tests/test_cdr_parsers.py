@@ -469,3 +469,17 @@ def test_new_parsers_flag_truncated_payloads(msg_type: str) -> None:
     }[msg_type]
     msg = _parse_cdr_basic(full[: len(full) // 2 + 10], msg_type)
     assert msg.get("_parse_error") is True
+
+
+@pytest.mark.parametrize("frame_id", ["", "g", "gps", "gnss", "gnss_link", "POS_REF", "base_gnss"])
+def test_navsatfix_status_is_read_for_any_frame_id_length(frame_id: str) -> None:
+    """status (int8) follows frame_id unaligned; padding it to 4 bytes misread most frames."""
+    from bagx.reader import _parse_navsatfix
+
+    for status in (-1, 0, 2):
+        msg = _parse_navsatfix(build_navsatfix_cdr(1, 2, status, 35.5, 139.25, 10.0,
+                                                   frame_id=frame_id))
+        assert msg["frame_id"] == frame_id
+        assert msg["status"] == status
+        assert msg["service"] == 1
+        assert (msg["latitude"], msg["longitude"], msg["altitude"]) == (35.5, 139.25, 10.0)
