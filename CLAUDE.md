@@ -71,7 +71,7 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 - **検出条件**: 上記2つ以上 OR (LaserScan型 + `/odom`)
 - **チェック項目**: odomレート(20Hz+), LaserScanレート(10Hz+), cmd_velレート
 - **パイプライン遅延**: scan→costmap, odom→localization, scan→cmd_vel(フルループ)
-- **検証データ**: TurtleBot3 Walker bag (okritvik/TurtleBot3_Walker)
+- **検証データ**: Nav2 Gazebo dogfood capture (`scripts/run_ros_dogfood.py nav2-gazebo`)。TurtleBot3 Walker (okritvik/TurtleBot3_Walker) は配布元消失
 
 ### Autoware 検出
 - **トピックパターン**: `/sensing/*`, `/perception/*`, `/planning/*`, `/control/*`, `/localization/*`, `/vehicle/*`
@@ -86,7 +86,7 @@ CLIオプション: `--version`, `--verbose`/`-v`, `--quiet`/`-q`
 - **検出条件**: 上記2つ以上 OR (JointState型 + 名前マッチ)
 - **チェック項目**: JointStateレート(100Hz+), レートの異常値ガード(>100kHz除外)
 - **パイプライン遅延**: joint_states→planned_path
-- **検証データ**: Franka Panda bag (adriankobras/panda)
+- **検証データ**: MoveIt dogfood capture (`scripts/run_ros_dogfood.py moveit-demo`)。Franka Panda (adriankobras/panda) は配布元消失
 
 ### ドメイン間の干渉防止
 - Nav2/Autoware/MoveIt検出時、SLAM固有のレコメ（「No IMU → KISS-ICP推奨」等）を抑制
@@ -164,11 +164,15 @@ EuRoC MH_01 は `robotics.ethz.ch` が不通の環境では ETH Research Collect
 - 設定例: `claude mcp add bagx -- bagx mcp`（`docs/guide/mcp.md`）
 
 ## スコアボード (P6)
-- `benchmarks/scoreboard.json` — 公開30データセットの manifest（スコア・再現コマンド付き）
+- `benchmarks/scoreboard.json` — 30データセットの manifest（スコア・再現コマンド・bag fingerprint 付き）
+  - `provenance`: `public`（配布元からDL）/ `simulator`（dogfood収録）。dogfood キャッシュへの fallback は `simulator` のみ
+  - `availability: source_unavailable` の行はスコアを持たない（配布元消失）
+  - `scripts/generate_scoreboard.py --check` で整合性検証（同一bagで採点された行の重複検出など、テストでも実行）
+  - 公開行に dogfood bag を symlink で割り当てない（過去に TurtleBot3/Panda 行が sim の結果の複製になっていた）
 - `scripts/generate_scoreboard.py` — manifest → `docs/scoreboard.md` 自動生成
 - `--refresh --write-manifest` でローカル bag からスコア更新（`BAGX_SCOREBOARD_BAGS`）
 - `.db3.zstd` 展開先: `BAGX_DB3_CACHE`（`/tmp` 満杯時は `.cache/db3-decompress` 等を指定）
-- `scripts/fetch_scoreboard_bags.sh` — Autoware S3 + AutoCore を一括取得
+- `scripts/fetch_scoreboard_bags.sh` — Autoware S3 + AutoCore + NVIDIA r2b (NGC) を一括取得
 - 分析記事: `docs/scoreboard/why-*.md`（低スコアの理由解説）
 
 ## ドキュメント

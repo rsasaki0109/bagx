@@ -56,14 +56,24 @@ if [[ ! -f euroc_mh01/MH_01_easy.bag ]]; then
   ln -sfn euroc_mh01/MH_01_easy.bag MH_01_easy.bag
 fi
 
-# Dogfood captures used when upstream HF datasets are unavailable.
-DOGFOOD="$REPO_ROOT/.cache/dogfood"
-if [[ -d "$DOGFOOD/nav2-deep-final-20260324-185315" ]]; then
-  ln -sfn "$DOGFOOD/nav2-deep-final-20260324-185315" turtlebot3_walker
-fi
-if [[ -d "$DOGFOOD/moveit-exec-final-20260324-185315" ]]; then
-  ln -sfn "$DOGFOOD/moveit-exec-final-20260324-185315" panda
-fi
+fetch_r2b() {
+  local seq="$1"
+  local base="https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/r2bdataset2024/versions/1/files/${seq}"
+  if [[ -f "${seq}/${seq}_0.mcap" ]]; then
+    return
+  fi
+  echo "==> NVIDIA r2b: ${seq}"
+  mkdir -p "${seq}"
+  curl -fL "${base}/metadata.yaml" -o "${seq}/metadata.yaml"
+  curl -fL "${base}/${seq}_0.mcap" -o "${seq}/${seq}_0.mcap"
+}
+
+for seq in r2b_galileo r2b_galileo2 r2b_whitetunnel r2b_robotarm; do
+  fetch_r2b "$seq"
+done
+
+# Simulator rows (provenance "simulator") resolve from .cache/dogfood/ captured with
+# scripts/run_ros_dogfood.py. Never alias a capture onto a public row's bag name.
 
 echo "Done. Refresh scores with:"
 echo "  export BAGX_SCOREBOARD_BAGS=$OUT_DIR"

@@ -1,40 +1,52 @@
-# Why Autoware all-sensors-bag4 scores 72
+# Why Autoware all-sensors-bag4 scores 78
 
-**Overall: 72.2/100** · Domain: Autoware · ROS 2
+**Overall: 77.9/100** · Domain: Autoware · ROS 2 · bagx 0.6.0
 
 ## This is not a "bad bag"
 
-The Leo Drive Isuzu **all-sensors-bag4** is an official Autoware open-data recording with
-healthy sensing topics. The score reflects **what is in the file**, not vehicle performance.
+The Leo Drive Isuzu **all-sensors-bag4** is an official Autoware open-data recording
+(17.8 s, 17 topics, 9,489 messages). The Autoware domain checks pass almost entirely. What
+pulls the overall score down is the **IMU and sync sub-scores**, not missing topics.
 
-## Why overall ≠ 99 like driving_20
+## Score breakdown
 
-`driving_20_kmh` scores **99.0** because it includes full-stack signals bagx checks for
-Autoware readiness:
+Overall is the mean of the sub-scores that apply to the bag:
 
-- Vehicle velocity status at high rate
-- LiDAR packet streams with sync checks
-- Planning / control visibility where present
+| Component | Score | Why |
+|-----------|-------|-----|
+| GNSS | 99.9 | `/gnss/fix` has a 100% fix rate |
+| Domain (Autoware) | 95.0 | LiDAR at 9–10 Hz ✔, GNSS ✔; the three `lucid_vision` cameras run at 14 Hz, just under the 15 Hz perception target |
+| Sync | 67.7 | Camera↔camera and GNSS↔camera pairs show ~24–31 ms mean and up to ~200 ms max offset |
+| IMU | 48.8 | Accel noise 0.43 m/s² (x axis 0.57), gyro y 0.048 rad/s |
+| **Overall** | **77.9** | (99.9 + 95.0 + 67.7 + 48.8) / 4 |
 
-`all-sensors-bag4` is primarily a **sensing and localization bundle**. bagx detects Autoware
-and scores domain coverage, but many planning/control topics are absent. The eval report
-notes sensing/localization-only context — that caps the domain sub-score.
+## Reading the IMU number
 
-## How bagx computes this row
+bagx estimates noise as `std(diff(x)) / √2`. On a **moving vehicle** that number includes
+real vibration and road motion, not only sensor noise, so it is an upper bound. The bag is
+also too short (<60 s) and not static, so bagx cannot run Allan variance and says so. Treat
+the IMU warning as "do not take noise densities from this bag", not "the IMU is broken".
 
-| Component | all-sensors-bag4 | driving_20 |
-|-----------|------------------|------------|
-| Domain (Autoware) | ~72 — partial stack | ~99 — fuller stack |
-| GNSS / LiDAR / camera | Present | Present + vehicle status |
-| Planning/control | Mostly missing | Recorded |
+## Reading the sync number
 
-Overall is the mean of applicable sub-scores (GNSS, IMU, sync when relevant, domain).
+The cameras are not hardware-triggered against each other or against GNSS. bagx pairs each
+message with the nearest message on the other topic, so 14 Hz cameras with free-running
+phase produce tens of milliseconds of offset by construction. For multi-camera perception
+that is worth knowing; for LiDAR-only localization it does not matter
+(`/sensing/imu/imu_data` ↔ concatenated pointcloud is 25 ms mean, 81 ms max).
 
-## When to use each bag
+## Planning / control
 
-- **all-sensors-bag4** — Calibrate perception/localization pipelines, sensor bring-up, bagx
-  regression on Autoware *sensing* detection.
-- **driving_20** — End-to-end Autoware readiness gate before integration tests.
+bag4 is a sensing/localization bundle. bagx notes that planning/control topics are absent
+and **skips** those checks instead of penalizing them, which is why the domain score stays
+at 95.
+
+## When to use this bag
+
+- Sensor bring-up and LiDAR/GNSS localization regression tests
+- bagx regression on Autoware *sensing* detection
+- Not as a source of IMU noise parameters, and not as an end-to-end Autoware gate (use
+  `driving_20_kmh`, 99.0, for that)
 
 ## Reproduce
 
@@ -43,4 +55,4 @@ aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/
 bagx eval all-sensors-bag4_compressed
 ```
 
-See also [driving_20 on the scoreboard](../scoreboard.md).
+See also [the scoreboard](../scoreboard.md).
