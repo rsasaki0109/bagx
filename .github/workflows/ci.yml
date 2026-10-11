@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev,ros1,mcp]"
+        run: pip install -e ".[dev,mcap,ros1,mcp]"
 
       - name: Lint with ruff
         run: ruff check .
@@ -47,6 +47,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # ros-base ships an apt pytest plus ROS pytest plugins (launch_testing, ament)
+      # that break collection of this suite; run plain pytest.
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +64,9 @@ jobs:
         run: |
           source /opt/ros/$ROS_DISTRO/setup.bash
           python3 -m venv --system-site-packages /opt/bagx-venv
-          /opt/bagx-venv/bin/pip install -e ".[dev,ros1,mcp]"
+          # Jammy's pip 22.0 cannot do PEP 660 editable installs.
+          /opt/bagx-venv/bin/pip install --upgrade pip
+          /opt/bagx-venv/bin/pip install -e ".[dev,mcap,ros1,mcp]"
 
       - name: Run tests through the rosbag2_py backend
         run: |
