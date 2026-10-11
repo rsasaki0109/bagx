@@ -41,7 +41,7 @@ from bagx.eval_workflow import (
 )
 from bagx.findings import Finding, severity_at_least
 from bagx.reader import BagReader, Message
-from bagx.topic_filters import is_sync_candidate
+from bagx.topic_filters import is_sync_candidate, nearest_neighbor_delays_ns
 
 logger = logging.getLogger(__name__)
 
@@ -619,17 +619,9 @@ def _evaluate_sync(
         if len(ts1) < 5 or len(ts2) < 5:
             continue
 
-        # For each message in t1, find nearest in t2
-        delays = []
-        j = 0
-        for t in ts1:
-            while j < len(ts2) - 1 and abs(ts2[j + 1] - t) < abs(ts2[j] - t):
-                j += 1
-            if j < len(ts2):
-                delays.append(abs(int(ts2[j] - t)))
-
-        if delays:
-            delay_ms = np.array(delays) / 1e6  # ns to ms
+        delays = nearest_neighbor_delays_ns(ts1, ts2)
+        if len(delays):
+            delay_ms = delays / 1e6  # ns to ms
             metrics.topic_pairs.append((t1, t2))
             metrics.mean_delay_ms.append(float(np.mean(delay_ms)))
             metrics.max_delay_ms.append(float(np.max(delay_ms)))

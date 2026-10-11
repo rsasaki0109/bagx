@@ -53,8 +53,14 @@ class TestTuneModule:
         assert 'imu_topic: "/imu"' in yaml_text
         assert "acc_cov: 0.0" in yaml_text
         assert "gyr_cov: 0.0" in yaml_text
-        assert "per-point deskew" in yaml_text
+        assert "per-point deskew" not in yaml_text
         assert "bagx: not estimated, framework default" in yaml_text
+
+    def test_fast_lio_tune_flags_deskew_on_skewed_sync(self, skewed_sync_bag: Path):
+        report = evaluate_bag(str(skewed_sync_bag))
+        yaml_text = tune_report(report, "fast_lio")
+
+        assert "per-point deskew" in yaml_text
 
     def test_kiss_icp_tune_multi_bag(self, multi_bag: Path):
         report = evaluate_bag(str(multi_bag))

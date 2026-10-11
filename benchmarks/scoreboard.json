@@ -10,63 +10,73 @@
       "ros": "ros2",
       "provenance": "public",
       "availability": "available",
-      "source_url": "https://ori-drs.github.io/newer_college_dataset/",
+      "source_url": "https://ori-drs.github.io/newer-college-dataset/download/",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/newer_college.db3",
       "reproduce": "bagx eval newer_college.db3",
-      "download_hint": "Request access via the Newer College dataset page; convert/play the sequence as rosbag2.",
+      "download_hint": "Download is gated behind the dataset request form (CC BY-NC-SA 4.0, non-commercial academic use). The 0.4.0 score was from an unrecorded sequence and was removed; rescore once a sequence is pinned.",
       "results": {
-        "overall_score": 92.3,
-        "imu_score": 84.5,
-        "sync_score": 100.0,
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "LiDAR+IMU quality is strong enough for SLAM benchmarking",
-        "bagx_version": "0.4.0",
-        "evaluated_at": "2025-11-01"
+        "key_finding": "Pending rescore \u2014 download requires the dataset request form",
+        "bagx_version": null,
+        "evaluated_at": null
       }
     },
     {
       "name": "livox-mid360",
-      "display_name": "Livox MID-360",
+      "display_name": "Livox MID-360 (AIST driving)",
       "domain": "SLAM",
       "ros": "ros2",
       "provenance": "public",
       "availability": "available",
-      "source_url": "https://www.livoxtech.com/mid-360",
-      "bag_path": "${BAGX_SCOREBOARD_BAGS}/livox_mid360.db3",
-      "reproduce": "bagx eval livox_mid360.db3",
-      "download_hint": "Community MID-360 rosbag recordings (see Livox SDK examples and Hugging Face mirrors).",
+      "source_url": "https://zenodo.org/records/14841855",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/livox_mid360_aist",
+      "reproduce": "bagx eval livox_mid360_aist",
+      "download_hint": "curl -L -o mid360.zip https://zenodo.org/api/records/14841855/files/rosbag2_2024_04_16-14_17_01.zip/content (517MB, md5 0836c50859bb1af591966b69da166186; K. Koide / AIST, CC-BY-4.0), unzip and rename the folder to livox_mid360_aist.",
       "results": {
-        "overall_score": 83.7,
-        "imu_score": 97.3,
-        "sync_score": 70.0,
+        "overall_score": 98.65168893737147,
+        "imu_score": 97.30337787474295,
+        "sync_score": 100,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "IMU is excellent but LiDAR\u2194IMU sync ~25ms \u2014 enable deskew",
-        "bagx_version": "0.4.0",
-        "evaluated_at": "2025-11-01"
+        "key_finding": "IMU accel noise 0.0160 m/s\u00b2 \u2014 excellent, set imu_acc_noise_density to 0.0160",
+        "fingerprint": {
+          "total_messages": 58217,
+          "topic_count": 8,
+          "duration_sec": 277.167
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
       "name": "ntu-viral-drone",
-      "display_name": "NTU VIRAL (drone)",
+      "display_name": "NTU VIRAL eee_03 (drone)",
       "domain": "SLAM",
-      "ros": "ros2",
+      "ros": "ros1",
       "provenance": "public",
       "availability": "available",
-      "source_url": "https://github.com/ntu-aris/ntu_viral_dataset",
-      "bag_path": "${BAGX_SCOREBOARD_BAGS}/ntu_viral.db3",
-      "reproduce": "bagx eval ntu_viral.db3",
-      "download_hint": "Clone NTU VIRAL dataset and play/record as rosbag2.",
+      "source_url": "https://doi.org/10.21979/N9/X39LEK",
+      "bag_path": "${BAGX_SCOREBOARD_BAGS}/eee_03/eee_03.bag",
+      "reproduce": "pip install bagx[ros1] && bagx eval eee_03/eee_03.bag",
+      "download_hint": "curl -L -o eee_03.zip https://researchdata.ntu.edu.sg/api/access/datafile/68132 (2.0GB, md5 9bf10b5455ee6d2962324ef557f86433; DR-NTU, CC BY-NC 4.0), then unzip.",
       "results": {
-        "overall_score": 79.8,
-        "imu_score": 59.5,
-        "sync_score": 100.0,
+        "overall_score": 83.98605316723987,
+        "imu_score": 71.95815950171962,
+        "sync_score": 100,
         "gnss_score": 80.0,
         "domain_score": null,
-        "key_finding": "Noisy IMU \u2014 LiDAR-only SLAM (e.g. KISS-ICP) recommended",
-        "bagx_version": "0.4.0",
-        "evaluated_at": "2025-11-01"
+        "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
+        "fingerprint": {
+          "total_messages": 389804,
+          "topic_count": 19,
+          "duration_sec": 181.353
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -75,20 +85,20 @@
       "domain": "SLAM",
       "ros": "ros2",
       "provenance": "public",
-      "availability": "available",
+      "availability": "source_unavailable",
       "source_url": "https://data.ouster.io/",
       "bag_path": "${BAGX_SCOREBOARD_BAGS}/ouster_os0-32.db3",
       "reproduce": "bagx eval ouster_os0-32.db3",
-      "download_hint": "Ouster sample recordings or static calibration captures.",
+      "download_hint": "data.ouster.io serves sensor pcap samples, not this rosbag; the static OS0-32 recording scored on 0.4.0 was never pinned to a downloadable file, so its score was removed.",
       "results": {
-        "overall_score": 76.6,
-        "imu_score": 79.6,
-        "sync_score": 73.6,
+        "overall_score": null,
+        "imu_score": null,
+        "sync_score": null,
         "gnss_score": null,
         "domain_score": null,
-        "key_finding": "50Hz IMU is slow for deskew; sync margin is thin",
-        "bagx_version": "0.4.0",
-        "evaluated_at": "2025-11-01"
+        "key_finding": "Source unavailable \u2014 original recording was never pinned to a public file",
+        "bagx_version": null,
+        "evaluated_at": null
       }
     },
     {
@@ -109,8 +119,13 @@
         "gnss_score": null,
         "domain_score": null,
         "key_finding": "IMU accel noise 0.0515 m/s\u00b2 \u2014 good for LIO, set imu_acc_noise_density to 0.0515",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 18117,
+          "topic_count": 4,
+          "duration_sec": 51.896
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -125,14 +140,19 @@
       "reproduce": "pip install bagx[ros1] && bagx eval MH_01_easy.bag",
       "download_hint": "HF mirror: huggingface-cli download kavehsgh/EuRoC_MAV_Dataset_Machine_Hall_Easy_01 --local-dir euroc_mh01 (or ETH Research Collection).",
       "results": {
-        "overall_score": 60.32672074858402,
+        "overall_score": 60.3310700153227,
         "imu_score": 23.05074576699423,
-        "sync_score": 97.60269573017382,
+        "sync_score": 97.61139426365118,
         "gnss_score": null,
         "domain_score": null,
         "key_finding": "WARNING IMU accel noise 0.7935 m/s\u00b2 \u2014 noisy, LiDAR-only odometry may outperform LIO",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 47283,
+          "topic_count": 4,
+          "duration_sec": 187.749
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -213,9 +233,9 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag4_compressed/ ./all-sensors-bag4_compressed --no-sign-request && bagx eval all-sensors-bag4_compressed",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag4_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 77.86871108426323,
+        "overall_score": 82.8039166962819,
         "imu_score": 48.83677447537777,
-        "sync_score": 67.66311404368594,
+        "sync_score": 87.40393649176062,
         "gnss_score": 99.93328915132255,
         "domain_score": 95.04166666666666,
         "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
@@ -224,7 +244,7 @@
           "topic_count": 17,
           "duration_sec": 17.837
         },
-        "bagx_version": "0.6.0",
+        "bagx_version": "0.6.0+dev",
         "evaluated_at": "2026-10-11"
       }
     },
@@ -251,7 +271,7 @@
           "topic_count": 6,
           "duration_sec": 853.897
         },
-        "bagx_version": "0.6.0",
+        "bagx_version": "0.6.0+dev",
         "evaluated_at": "2026-10-11"
       }
     },
@@ -267,14 +287,19 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_30_kmh_2022_06_10-15_47_42_compressed/ ./driving_30 --no-sign-request && bagx eval driving_30",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/driving_30_kmh_2022_06_10-15_47_42_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 98.94988901467738,
+        "overall_score": 98.95398838887095,
         "imu_score": null,
-        "sync_score": 97.89977802935478,
+        "sync_score": 97.9079767777419,
         "gnss_score": null,
         "domain_score": 100.0,
-        "key_finding": "Sensor sync good (8.4ms)",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "key_finding": "Sensor sync good (8.3ms)",
+        "fingerprint": {
+          "total_messages": 181965,
+          "topic_count": 6,
+          "duration_sec": 774.362
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -289,14 +314,19 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag1_compressed/ ./all-sensors-bag1_compressed --no-sign-request && bagx eval all-sensors-bag1_compressed",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag1_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 90.21974885992535,
+        "overall_score": 93.84985795892227,
         "imu_score": 85.82677009698489,
-        "sync_score": 75.11282171740322,
+        "sync_score": 89.63325811339092,
         "gnss_score": 99.93940362531329,
         "domain_score": 100.0,
         "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 20062,
+          "topic_count": 17,
+          "duration_sec": 36.513
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -311,14 +341,19 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag2_compressed/ ./all-sensors-bag2_compressed --no-sign-request && bagx eval all-sensors-bag2_compressed",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag2_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 86.08769163388149,
+        "overall_score": 90.4171194669662,
         "imu_score": 69.83487539067384,
-        "sync_score": 74.57870657933054,
+        "sync_score": 91.89641791166937,
         "gnss_score": 99.93718456552156,
         "domain_score": 100.0,
         "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 13143,
+          "topic_count": 17,
+          "duration_sec": 23.727
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -333,14 +368,19 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag3_compressed/ ./all-sensors-bag3_compressed --no-sign-request && bagx eval all-sensors-bag3_compressed",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag3_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 81.69113826327117,
+        "overall_score": 86.94593466664807,
         "imu_score": 78.66639251274911,
-        "sync_score": 59.029056565563835,
+        "sync_score": 80.04824217907148,
         "gnss_score": 99.94410397477174,
         "domain_score": 89.125,
         "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 12864,
+          "topic_count": 17,
+          "duration_sec": 24.812
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -531,9 +571,9 @@
       "reproduce": "bagx eval r2b_galileo",
       "download_hint": "curl -L https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/r2bdataset2024/versions/1/files/r2b_galileo/r2b_galileo_0.mcap (plus metadata.yaml) \u2014 r2b dataset 2024 on NVIDIA NGC, CC-BY-4.0.",
       "results": {
-        "overall_score": 90.53329015229258,
+        "overall_score": 90.93156329819247,
         "imu_score": 72.79468989457742,
-        "sync_score": 98.80518056230032,
+        "sync_score": 100,
         "gnss_score": null,
         "domain_score": 100.0,
         "key_finding": "WARNING IMU accel noise 0.2882 m/s\u00b2 \u2014 noisy, consider checking IMU calibration",
@@ -542,7 +582,7 @@
           "topic_count": 23,
           "duration_sec": 22.0
         },
-        "bagx_version": "0.6.0",
+        "bagx_version": "0.6.0+dev",
         "evaluated_at": "2026-10-11"
       }
     },
@@ -558,9 +598,9 @@
       "reproduce": "bagx eval r2b_whitetunnel",
       "download_hint": "curl -L https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/r2bdataset2024/versions/1/files/r2b_whitetunnel/r2b_whitetunnel_0.mcap (plus metadata.yaml) \u2014 r2b dataset 2024 on NVIDIA NGC, CC-BY-4.0.",
       "results": {
-        "overall_score": 91.27139117176311,
+        "overall_score": 91.71195974824029,
         "imu_score": 75.13587924472087,
-        "sync_score": 98.67829427056843,
+        "sync_score": 100,
         "gnss_score": null,
         "domain_score": 100.0,
         "key_finding": "WARNING IMU accel noise 0.2812 m/s\u00b2 \u2014 noisy, consider checking IMU calibration",
@@ -569,7 +609,7 @@
           "topic_count": 23,
           "duration_sec": 26.998
         },
-        "bagx_version": "0.6.0",
+        "bagx_version": "0.6.0+dev",
         "evaluated_at": "2026-10-11"
       }
     },
@@ -585,9 +625,9 @@
       "reproduce": "bagx eval r2b_galileo2",
       "download_hint": "curl -L https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/r2bdataset2024/versions/1/files/r2b_galileo2/r2b_galileo2_0.mcap (plus metadata.yaml) \u2014 r2b dataset 2024 on NVIDIA NGC, CC-BY-4.0.",
       "results": {
-        "overall_score": 97.48975868894613,
+        "overall_score": 97.49777093675546,
         "imu_score": null,
-        "sync_score": 95.26523166360656,
+        "sync_score": 95.28125615922521,
         "gnss_score": null,
         "domain_score": 99.71428571428571,
         "key_finding": "Sensor sync good (16.2ms)",
@@ -596,7 +636,7 @@
           "topic_count": 9,
           "duration_sec": 20.548
         },
-        "bagx_version": "0.6.0",
+        "bagx_version": "0.6.0+dev",
         "evaluated_at": "2026-10-11"
       }
     },
@@ -623,7 +663,7 @@
           "topic_count": 8,
           "duration_sec": 14.501
         },
-        "bagx_version": "0.6.0",
+        "bagx_version": "0.6.0+dev",
         "evaluated_at": "2026-10-11"
       }
     },
@@ -639,14 +679,19 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag5_compressed/ ./all-sensors-bag5_compressed --no-sign-request && bagx eval all-sensors-bag5_compressed",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag5_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 84.53373542467293,
+        "overall_score": 90.18337705816629,
         "imu_score": 77.92180192411674,
-        "sync_score": 64.52515925964352,
+        "sync_score": 87.12372579361701,
         "gnss_score": 99.93798051493144,
         "domain_score": 95.75,
         "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 15921,
+          "topic_count": 17,
+          "duration_sec": 30.035
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {
@@ -661,14 +706,19 @@
       "reproduce": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag6_compressed/ ./all-sensors-bag6_compressed --no-sign-request && bagx eval all-sensors-bag6_compressed",
       "download_hint": "aws s3 sync s3://autoware-files/recordings/bags/2022-08-22_leo_drive_isuzu_bags/all-sensors-bag6_compressed/ ... --no-sign-request",
       "results": {
-        "overall_score": 76.96969577195384,
+        "overall_score": 81.56878709841857,
         "imu_score": 40.257730626018514,
-        "sync_score": 69.86184129760197,
+        "sync_score": 88.25820660346098,
         "gnss_score": 99.92587783086148,
         "domain_score": 97.83333333333334,
         "key_finding": "GNSS fix rate 100% \u2014 suitable as ground truth reference",
-        "bagx_version": "0.6.0",
-        "evaluated_at": "2026-06-10"
+        "fingerprint": {
+          "total_messages": 10821,
+          "topic_count": 16,
+          "duration_sec": 20.225
+        },
+        "bagx_version": "0.6.0+dev",
+        "evaluated_at": "2026-10-11"
       }
     },
     {

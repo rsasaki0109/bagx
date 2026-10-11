@@ -38,14 +38,15 @@ bagx benchmark benchmarks/non_slam_suite.json
 
 ## Real-world results
 
-Evaluated on public LiDAR SLAM datasets:
+Evaluated on public SLAM datasets (see the [scoreboard](scoreboard.md) for all 30 rows and
+reproduce commands):
 
 | Dataset | Duration | Messages | GNSS | IMU | Sync | Overall |
 |---------|----------|----------|------|-----|------|---------|
-| Livox MID-360 | 277s | 58K | N/A | 97.3 | 70.0 | **83.7** |
-| Newer College | 193s | 226K | N/A | 84.5 | 100.0 | **92.3** |
-| NTU VIRAL (drone) | 584s | 1.2M | 80.0 | 59.5 | 100.0 | **79.8** |
-| Ouster OS0-32 | 47s | 5K | N/A | 79.6 | 73.6 | **76.6** |
+| Livox MID-360 (AIST driving) | 277s | 58K | N/A | 97.3 | 100.0 | **98.7** |
+| TUM VI calib-imu1 | 52s | 18K | N/A | 90.8 | 100.0 | **95.4** |
+| NTU VIRAL eee_03 (drone) | 181s | 390K | 80.0 | 72.0 | 100.0 | **84.0** |
+| EuRoC MH_01_easy | 188s | 47K | N/A | 23.1 | 97.6 | **60.3** |
 
 ## Quick install
 

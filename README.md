@@ -48,15 +48,15 @@ When a rosbag is not for SLAM, the value is usually one of these:
 ## Example: catching a real problem
 
 ```
-$ bagx eval ouster_os0-32.db3
+$ bagx eval eee_03/eee_03.bag        # NTU VIRAL drone sequence (ROS 1)
 
-Overall Score: 76.6/100
+Overall Score: 84.0/100
 
 Recommendations:
-  ✔ IMU accel noise 0.087 m/s² — good for LIO, set imu_acc_noise_density to 0.087
-  ⚠ IMU gyro noise 0.022 rad/s — consider lowering IMU integration weight
-  ⚠ IMU rate 50Hz is low — 200Hz+ recommended for tightly-coupled LIO
-  ⚠ LiDAR↔IMU sync delay 23ms — enable per-point deskew in SLAM
+  ✔ GNSS fix rate 100% — suitable as ground truth reference
+  ⚠ IMU accel noise 0.2953 m/s² — noisy, LiDAR-only odometry may outperform LIO
+  ✔ IMU gyro noise 0.008516 rad/s — set imu_gyro_noise_density to 0.008516
+  ✔ Sensor sync excellent (2.4ms) — suitable for tightly-coupled fusion
 ```
 
 Without bagx, you'd discover these issues *after* hours of failed SLAM runs.
@@ -148,11 +148,11 @@ pip install bagx[ros1]   # ROS1 .bag support (pure Python via rosbags)
 
 | Dataset | Domain | Score | What bagx tells you |
 |---------|--------|-------|---------------------|
-| Newer College | SLAM | **92** | LiDAR+IMU quality is strong enough for SLAM benchmarking |
-| Ouster OS0-32 | SLAM | **77** | IMU is too slow and sync is weak, so deskew / sensor changes are needed |
+| Livox MID-360 (AIST driving) | SLAM | **98.7** | 200Hz IMU with low noise and LiDAR↔IMU within 1.6ms — ready for LIO |
+| NTU VIRAL `eee_03` | SLAM (drone) | **84.0** | Sync is clean, but in-flight accel noise is high (0.30 m/s²) — consider LiDAR-forward odometry |
 | `driving_20_kmh_2022_06_10-16_01_55_compressed` | Autoware sensing/control | **99** | LiDAR packets and `/vehicle/status/velocity_status` are present and healthy |
-| `r2b_galileo` | Multi-camera perception | **90.5** | Eight compressed camera streams, IMU, and chassis odom are recorded and time-aligned |
-| `r2b_whitetunnel` | Multi-camera perception | **91.3** | Eight compressed camera streams plus IMU are recorded; bagx flags noisy accel and still validates perception coverage |
+| `r2b_galileo` | Multi-camera perception | **90.9** | Eight compressed camera streams, IMU, and chassis odom are recorded and time-aligned |
+| `r2b_whitetunnel` | Multi-camera perception | **91.7** | Eight compressed camera streams plus IMU are recorded; bagx flags noisy accel and still validates perception coverage |
 | `r2b_galileo2` | Camera perception | **97.5** | RGB-D + infra + camera_info are all recorded, so the bag is reusable for perception work |
 | `r2b_robotarm` | Manipulation perception | **96.0** | RGB-D + `joint_states` make it suitable for robot-arm perception benchmarking |
 | `nav2-deep-final-20260324-185315` | Navigation/control | **100** | Nav2 plan, costmap, and `plan → cmd_vel` loop are all observable |

@@ -309,15 +309,15 @@ class TestBenchmarkSeverityGate:
         assert case.status == "passed"
         assert all(c.passed for c in case.checks)
 
-    def test_forbidden_findings_with_severity_min(self, tmp_path: Path, multi_bag: Path):
-        # multi_bag emits sync.delay.high at severity=warning.
+    def test_forbidden_findings_with_severity_min(self, tmp_path: Path, skewed_sync_bag: Path):
+        # skewed_sync_bag emits sync.delay.high at severity=warning.
         # severity_min=error means warning is still acceptable.
         manifest_path = _write_manifest(
             tmp_path,
             [
                 {
                     "name": "ok-at-error",
-                    "bag_path": str(multi_bag),
+                    "bag_path": str(skewed_sync_bag),
                     "expect": {
                         "forbidden_findings": [
                             {"id": "sync.delay.high", "severity_min": "error"}
@@ -329,13 +329,13 @@ class TestBenchmarkSeverityGate:
         report = run_benchmark_suite(str(manifest_path))
         assert report.cases[0].status == "passed"
 
-    def test_max_severity_per_category(self, tmp_path: Path, multi_bag: Path):
+    def test_max_severity_per_category(self, tmp_path: Path, skewed_sync_bag: Path):
         manifest_path = _write_manifest(
             tmp_path,
             [
                 {
                     "name": "sync-quality-warning-not-allowed",
-                    "bag_path": str(multi_bag),
+                    "bag_path": str(skewed_sync_bag),
                     "expect": {"max_severity": {"sync_quality": "info"}},
                 }
             ],
@@ -348,13 +348,13 @@ class TestBenchmarkSeverityGate:
         assert not check.passed
         assert "sync.delay.high" in check.detail
 
-    def test_max_severity_passes_when_within_ceiling(self, tmp_path: Path, multi_bag: Path):
+    def test_max_severity_passes_when_within_ceiling(self, tmp_path: Path, skewed_sync_bag: Path):
         manifest_path = _write_manifest(
             tmp_path,
             [
                 {
                     "name": "sync-quality-warning-allowed",
-                    "bag_path": str(multi_bag),
+                    "bag_path": str(skewed_sync_bag),
                     "expect": {"max_severity": {"sync_quality": "warning"}},
                 }
             ],
@@ -362,23 +362,23 @@ class TestBenchmarkSeverityGate:
         report = run_benchmark_suite(str(manifest_path))
         assert report.cases[0].status == "passed"
 
-    def test_worst_severity_aggregation(self, tmp_path: Path, multi_bag: Path, nav2_bag: Path):
+    def test_worst_severity_aggregation(self, tmp_path: Path, skewed_sync_bag: Path, nav2_bag: Path):
         manifest_path = _write_manifest(
             tmp_path,
             [
-                {"name": "multi", "bag_path": str(multi_bag), "expect": {}},
+                {"name": "multi", "bag_path": str(skewed_sync_bag), "expect": {}},
                 {"name": "nav2", "bag_path": str(nav2_bag), "expect": {}},
             ],
         )
         report = run_benchmark_suite(str(manifest_path))
-        # multi_bag has sync.delay.high (warning); nav2_bag has missing-* warnings
+        # skewed_sync_bag has sync.delay.high (warning); nav2_bag has missing-* warnings
         assert report.worst_severity == "warning"
         assert report.cases[0].worst_severity in {"info", "warning"}
 
-    def test_cli_exit_on_warning(self, tmp_path: Path, multi_bag: Path):
+    def test_cli_exit_on_warning(self, tmp_path: Path, skewed_sync_bag: Path):
         manifest_path = _write_manifest(
             tmp_path,
-            [{"name": "multi", "bag_path": str(multi_bag), "expect": {}}],
+            [{"name": "multi", "bag_path": str(skewed_sync_bag), "expect": {}}],
         )
         result = runner.invoke(
             app, ["benchmark", str(manifest_path), "--exit-on", "warning"]
@@ -386,15 +386,15 @@ class TestBenchmarkSeverityGate:
         assert result.exit_code == 1
         assert "worst finding severity" in result.output
 
-    def test_cli_exit_on_error_passes_warning_bag(self, tmp_path: Path, multi_bag: Path):
+    def test_cli_exit_on_error_passes_warning_bag(self, tmp_path: Path, skewed_sync_bag: Path):
         manifest_path = _write_manifest(
             tmp_path,
-            [{"name": "multi", "bag_path": str(multi_bag), "expect": {}}],
+            [{"name": "multi", "bag_path": str(skewed_sync_bag), "expect": {}}],
         )
         result = runner.invoke(
             app, ["benchmark", str(manifest_path), "--exit-on", "error"]
         )
-        # multi_bag's worst is warning, which is below error threshold
+        # skewed_sync_bag's worst is warning, which is below error threshold
         assert result.exit_code == 0
 
     def test_cli_exit_on_invalid_severity(self, tmp_path: Path, nav2_bag: Path):

@@ -33,9 +33,25 @@ All notable changes to bagx are documented here. The format follows
 - `eval.py` is split into `eval_topics`, `eval_workflow`, `eval_latency` and `eval_domains`.
   This is a code move with no behavior change, and the old `bagx.eval` imports still work.
 - Scoreboard: TurtleBot3 Walker and Franka Panda rows are marked `source_unavailable`; r2b
-  rows point at NVIDIA NGC; six rows are rescored on real bags (Autoware bag4: 72.2 → 77.9).
+  rows point at NVIDIA NGC. Livox MID-360 is pinned to the AIST Zenodo bag (the same bag the
+  0.4.0 score came from) and NTU VIRAL to `eee_03` on DR-NTU. Newer College (download
+  needs a request form) is unscored until a sequence is pinned. Ouster OS0-32 is
+  `source_unavailable`, because its recording was never tied to a public file. Every
+  available public bag is rescored after the sync fix below, and rows scored on unreleased
+  code record `bagx_version` as `X.Y.Z+dev`.
 
 ### Fixed
+- Sync score (`bagx eval`, all SLAM / Autoware / perception bags with two or more sensor
+  streams): each pair walked whichever topic sorted first by name and took the nearest
+  message on the other. For a dense/sparse pair such as 200 Hz IMU ↔ 10 Hz LiDAR this
+  measured a quarter of the LiDAR period (~25 ms) however well the streams were aligned,
+  and raised a false "enable per-point deskew" warning. The pair now walks the sparser
+  topic, so sync scores rise on bags with mixed rates (Livox MID-360 70 → 100, Autoware bag4
+  67.7 → 87.4) and the tuned FAST-LIO comment about deskew disappears where it was spurious.
+  `bagx scenario` `sync_degraded` uses the same rule.
+- `sensor_msgs` Temperature, MagneticField, FluidPressure, RelativeHumidity, Illuminance and
+  BatteryState topics no longer count as sync candidates because their name contains `imu`
+  or `camera` (e.g. `/imu/temperature` was paired with a camera on NTU VIRAL).
 - NavSatFix CDR parser misread `status` / `service` unless `len(frame_id) + 1` was a
   multiple of 4 (e.g. `gnss_link`), which skewed the GNSS fix rate on the SQLite fallback.
 - On ROS 2 Jazzy every rclpy-decoded message failed to convert (`_check_fields` slot), so

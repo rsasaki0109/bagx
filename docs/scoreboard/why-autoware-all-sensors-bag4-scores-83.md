@@ -1,12 +1,12 @@
-# Why Autoware all-sensors-bag4 scores 78
+# Why Autoware all-sensors-bag4 scores 83
 
-**Overall: 77.9/100** · Domain: Autoware · ROS 2 · bagx 0.6.0
+**Overall: 82.8/100** · Domain: Autoware · ROS 2 · bagx 0.6.0
 
 ## This is not a "bad bag"
 
 The Leo Drive Isuzu **all-sensors-bag4** is an official Autoware open-data recording
 (17.8 s, 17 topics, 9,489 messages). The Autoware domain checks pass almost entirely. What
-pulls the overall score down is the **IMU and sync sub-scores**, not missing topics.
+pulls the overall score down is the **IMU sub-score** (and, less, camera↔camera sync), not missing topics.
 
 ## Score breakdown
 
@@ -16,9 +16,9 @@ Overall is the mean of the sub-scores that apply to the bag:
 |-----------|-------|-----|
 | GNSS | 99.9 | `/gnss/fix` has a 100% fix rate |
 | Domain (Autoware) | 95.0 | LiDAR at 9–10 Hz ✔, GNSS ✔; the three `lucid_vision` cameras run at 14 Hz, just under the 15 Hz perception target |
-| Sync | 67.7 | Camera↔camera and GNSS↔camera pairs show ~24–31 ms mean and up to ~200 ms max offset |
+| Sync | 87.4 | Camera↔camera pairs show 24–32 ms mean and up to 193 ms max offset; GNSS, IMU and LiDAR pairs stay under 4 ms mean |
 | IMU | 48.8 | Accel noise 0.43 m/s² (x axis 0.57), gyro y 0.048 rad/s |
-| **Overall** | **77.9** | (99.9 + 95.0 + 67.7 + 48.8) / 4 |
+| **Overall** | **82.8** | (99.9 + 95.0 + 87.4 + 48.8) / 4 |
 
 ## Reading the IMU number
 
@@ -29,11 +29,15 @@ the IMU warning as "do not take noise densities from this bag", not "the IMU is 
 
 ## Reading the sync number
 
-The cameras are not hardware-triggered against each other or against GNSS. bagx pairs each
-message with the nearest message on the other topic, so 14 Hz cameras with free-running
-phase produce tens of milliseconds of offset by construction. For multi-camera perception
-that is worth knowing; for LiDAR-only localization it does not matter
-(`/sensing/imu/imu_data` ↔ concatenated pointcloud is 25 ms mean, 81 ms max).
+bagx pairs each message of the sparser topic with the nearest message on the other topic.
+The three cameras are not hardware-triggered against each other, so 14 Hz cameras with
+free-running phase sit 24–32 ms apart on average. For multi-camera perception that is worth
+knowing; for LiDAR localization it does not matter (each concatenated pointcloud has an
+`/sensing/imu/imu_data` sample within 3.6 ms on average).
+
+Before the unreleased sync fix, bagx walked whichever topic sorted first by name. For a
+dense/sparse pair that measured the sparse topic's period instead of the alignment, which
+put this bag's sync at 67.7 and its overall at 77.9.
 
 ## Planning / control
 
