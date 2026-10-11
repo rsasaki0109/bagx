@@ -57,6 +57,13 @@ stamp within 2.5 ms on a 200 Hz stream. The second measurement exposes the
 It also includes transport and recording latency: **it does not prove a
 physical sensor offset**, and should not be applied blindly as a correction.
 
+On the public [AIST Livox MID-360 driving bag](https://zenodo.org/records/14841855),
+the unreleased diagnostic reports a **0.88 ms** header-neighbor mean and a
+**−102.15 ms** relative stamp/record offset (LiDAR minus IMU). Scan accumulation,
+transport and recording latency must be checked before interpreting that
+difference as a clock or calibration fault. All 58,217 messages were evaluated:
+the overall score stays **98.7**, and the existing findings match main exactly.
+
 Each pair produces a `sync_quality` finding with an id of the form
 `sync.header_stamp.<topic_a_token>.<topic_b_token>.<state>`:
 
