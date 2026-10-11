@@ -1,0 +1,45 @@
+name: Bug report
+description: Something crashed, or a score / finding looks wrong for your bag
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you got, and what you expected.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: bagx version
+      placeholder: "output of `bagx --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: Bag format
+      options: [".db3 (rosbag2 sqlite)", ".mcap", "ROS 1 .bag", "other"]
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "e.g. Ubuntu 24.04, Python 3.12, ROS 2 Jazzy (or no ROS)"
+  - type: textarea
+    id: info
+    attributes:
+      label: "`bagx info <bag>` output"
+      render: text
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or traceback
+      description: "`bagx eval <bag> --json report.json` output is the most useful."
+      render: text
+  - type: input
+    id: bag
+    attributes:
+      label: Link to the bag or an excerpt (optional)

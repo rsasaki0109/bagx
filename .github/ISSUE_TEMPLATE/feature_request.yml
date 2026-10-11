@@ -1,0 +1,22 @@
+name: Feature request
+description: A check, stack or output format bagx should support
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What question should bagx answer about your bag?
+      description: For example, "is the lidar mount transform recorded?" or "did the planner
+        ever fail?"
+    validations:
+      required: true
+  - type: textarea
+    id: stack
+    attributes:
+      label: Stack and topics involved
+      description: Framework (Nav2, Autoware, MoveIt, custom...), topic names and message types.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Could custom rules or a domain plugin cover it?
+      description: See docs/guide/custom-rules.md and docs/guide/domain-plugins.md.

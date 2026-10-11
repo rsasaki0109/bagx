@@ -332,4 +332,5 @@ bagx eval .cache/dogfood/moveit-exec-final
 
 - [Documentation](https://rsasaki0109.github.io/bagx/)
 - [PyPI](https://pypi.org/project/bagx/)
-- [Changelog](https://github.com/rsasaki0109/bagx/releases)
+- [Changelog](CHANGELOG.md) · [Versioning and compatibility](docs/guide/versioning.md)
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)

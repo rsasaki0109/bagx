@@ -518,7 +518,7 @@ class TestEvalIncludeAnomaly:
         assert anomaly_findings
         first = anomaly_findings[0]
         assert "time_range" in first
-        assert data["schema_version"] == "1.3.0"
+        assert data["schema_version"] == "1.4.0"
 
     def test_include_anomaly_does_not_change_quality_score(self, gnss_bag: Path):
         """Anomaly findings are additive — the overall_score logic is unchanged."""
