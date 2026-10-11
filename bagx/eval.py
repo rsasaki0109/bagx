@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, TextIO
 
 import numpy as np
@@ -62,6 +62,7 @@ class EvalConfig:
     imu_gyro_noise_scale: float = 2000.0
     sync_delay_excellent_ms: float = 5.0
     sync_delay_scale: float = 1.5
+    sync_pairing: str = "adjacent"  # adjacent (legacy) or imu (primary IMU ↔ every sensor)
 
 
 @dataclass
@@ -137,7 +138,9 @@ class EvalReport:
                 self,
                 detect_domain_names(self.topic_info, self.custom_domains),
             )
-        d = asdict(self)
+        # Exclude potentially millions of private timestamps before asdict's
+        # recursive copy, rather than allocating copies and dropping them later.
+        d = asdict(replace(self, _topic_timestamps={}, _topic_stamps={}))
         # Remove internal fields
         d.pop("_topic_timestamps", None)
         d.pop("_topic_stamps", None)
@@ -186,6 +189,8 @@ def evaluate_bag(
     if config is None:
         config = EvalConfig()
 
+    if config.sync_pairing not in {"adjacent", "imu"}:
+        raise ValueError("sync_pairing must be 'adjacent' or 'imu'")
     reader = BagReader(bag_path)
     summary = reader.summary()
 
@@ -312,7 +317,9 @@ def evaluate_bag(
         and is_sync_candidate(t, summary.topics[t].type)
     ]
     if len(sync_topics) >= 2 and not ({"Nav2", "MoveIt"} & domains):
-        report.sync = _evaluate_sync(topic_timestamps, sync_topics, config)
+        report.sync = _evaluate_sync(
+            topic_timestamps, sync_topics, config, primary_imu=report.imu_topic
+        )
 
     # Overall score
     report.domain_score = _compute_domain_score(report)
@@ -595,18 +602,27 @@ def _evaluate_sync(
     topic_timestamps: dict[str, list[int]],
     topics: list[str],
     config: EvalConfig,
+    *,
+    primary_imu: str = "",
 ) -> SyncMetrics:
     metrics = SyncMetrics()
 
-    # Evaluate pairs of adjacent topics (by name order)
     sorted_topics = sorted(topics)
-    pairs = list(zip(sorted_topics[:-1], sorted_topics[1:]))
+    if config.sync_pairing == "imu":
+        if primary_imu in sorted_topics:
+            pairs = [(primary_imu, t) for t in sorted_topics if t != primary_imu]
+        else:
+            # Bags without an active IMU still get linear, full sensor coverage.
+            pairs = list(zip(sorted_topics[:-1], sorted_topics[1:]))
+    else:
+        # Preserve the score contract for callers that do not opt in.
+        pairs = list(zip(sorted_topics[:-1], sorted_topics[1:]))[:5]
     if not pairs:
         return metrics
 
     all_delays = []
 
-    for t1, t2 in pairs[:5]:  # Limit to 5 pairs
+    for t1, t2 in pairs:
         ts1 = np.array(sorted(topic_timestamps[t1]), dtype=np.int64)
         ts2 = np.array(sorted(topic_timestamps[t2]), dtype=np.int64)
         overlap_start = max(int(ts1[0]), int(ts2[0]))

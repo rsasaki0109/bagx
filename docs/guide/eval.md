@@ -80,11 +80,25 @@ Host the file somewhere reachable by URL and reference it from a README:
 - **Mean/max delay**: for each message of the sparser topic in a pair, the record-time
   distance to the nearest message of the denser topic (e.g. each LiDAR scan → nearest IMU
   sample). Walking the denser topic would measure the sparser topic's period instead.
-- Evaluates the first 5 adjacent topic pairs by name order, among sensor streams
+- By default, evaluates the first 5 adjacent topic pairs by name order, among sensor streams
   (Imu, NavSatFix, LaserScan, PointCloud2, Image, …; `camera_info`, temperature and
   magnetometer topics are skipped)
-- Uses record time, so a constant offset hidden in `header.stamp` is not visible here;
-  the TF clock check (`tf.clock_mismatch.*`) compares stamps against record time
+- `--sync-pairing imu` pairs the best-scoring active IMU with every other eligible
+  sensor, including right cameras and secondary LiDARs beyond the first five pairs.
+  Without an active IMU, it evaluates all adjacent sensor pairs instead.
+- Scores use record time. Additional [header-stamp diagnostics](sync.md#header-stamp-diagnostics-in-eval)
+  reveal relative stamp/record offsets that nearest-neighbor distances can hide.
+
+```bash
+bagx eval recording.db3 --sync-pairing imu --json imu-pairs.json
+```
+
+The pairing option is available in `eval` and `EvalConfig(sync_pairing="imu")`.
+Changing pairs can change sync / overall scores, findings and recommendations for
+SLAM, Autoware and perception bags. Keep the pairing mode fixed when comparing
+reports or CI thresholds. Batch, benchmark and scoreboard evaluation retain the
+default `adjacent` mode; Nav2 and MoveIt evaluation continues to skip sensor sync.
+Pairs without enough shared samples are omitted in either mode.
 
 ### Pipeline latency
 For stack pipelines (Nav2 scan → costmap, odom → localization; Autoware sensing →
@@ -179,6 +193,7 @@ observed state, so passing states are also benchmark-checkable:
 - `gnss.fix_rate.{good,gappy,unreliable}`
 - `imu.accel_noise.{good,noisy}`, `imu.gyro_noise.{good,noisy}`, `imu.rate.low`
 - `sync.delay.{good,high}`
+- `sync.header_stamp.<topic_a_token>.<topic_b_token>.{measured,offset,delay_high,clock_mismatch,unavailable}`
 - `nav2.detected`, `nav2.odometry.rate_low`, `nav2.scan.rate_low`, `nav2.cmd_vel.rate_low`
 - `nav2.missing_cmd_vel`, `nav2.missing_global_plan`, `nav2.missing_navigate_to_pose`
 - `gnss.missing`, `imu.missing`, `gnss.hdop.high`
@@ -186,7 +201,7 @@ observed state, so passing states are also benchmark-checkable:
 - `custom.<domain_id>.<label_token>.{pass,fail,skipped}` — one per custom check
 - `workflow.<topic_token>.{action_failures,result_failures,missing_service_responses}`
 
-Use these ids in benchmark manifests via [`expected_findings`](benchmark.md#expected-findings).
+Use these ids in benchmark manifests via [`expected_findings`](benchmark.md#expected_findings).
 
 ### JSON Schema
 
@@ -233,7 +248,7 @@ events into temporal findings:
 
 `bagx diff` matches temporal findings segment-by-segment by `time_range`
 overlap, and `bagx benchmark` accepts a `time_range_overlap` constraint —
-see [diff](diff.md) and [benchmark](benchmark.md#expected-findings).
+see [diff](diff.md) and [benchmark](benchmark.md#expected_findings).
 
 ## Custom message stacks
 

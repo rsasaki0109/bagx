@@ -7,6 +7,13 @@ All notable changes to bagx are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Opt-in `bagx eval --sync-pairing imu` / `EvalConfig(sync_pairing="imu")`:
+  pair the best-scoring active IMU with every eligible sensor; without an IMU,
+  use all adjacent sensor pairs. Secondary LiDARs and right cameras are no
+  longer excluded by the five-pair limit in this mode. Default pairing remains
+  `adjacent`; batch, benchmark and scoreboard retain their existing scores.
+- Python 3.13 support, with the full test / benchmark smoke suite added to CI
+  alongside Python 3.10–3.12 and ROS 2 Humble / Jazzy.
 - `bagx eval` header-stamp sync diagnostics for its existing sensor pairs:
   header nearest-neighbor mean/P95 plus relative median `stamp − record_time`
   offsets reveal constant timestamp offsets hidden by dense periodic streams.
@@ -38,6 +45,15 @@ All notable changes to bagx are documented here. The format follows
   parity tests.
 
 ### Changed
+- Choosing `--sync-pairing imu` can change sync / overall scores and related
+  findings for SLAM, Autoware and perception bags. Nav2 / MoveIt sensor sync
+  remains disabled. For the regression fixture of two 10 Hz cameras offset
+  by 50 ms plus a 200 Hz IMU, sync is 70.96 (`adjacent`) → 100 (`imu`);
+  this is a change in compared pairs, not evidence of hardware alignment.
+  Default public scoreboard rows are unchanged (MID-360 overall 98.7 / sync
+  100, NTU VIRAL overall 84.0 / sync 100). Keep the pairing mode fixed in
+  comparisons / CI gates; alternate-mode scores need their own bag evaluation
+  and must not replace the default scoreboard results.
 - Report `schema_version` 1.3.0 → 1.4.0. This is additive: eval JSON gains `tf` and new
   finding categories `tf_tree` and `message_content`.
 - `eval.py` is split into `eval_topics`, `eval_workflow`, `eval_latency` and `eval_domains`.
@@ -51,6 +67,9 @@ All notable changes to bagx are documented here. The format follows
   code record `bagx_version` as `X.Y.Z+dev`.
 
 ### Fixed
+- Eval JSON serialization no longer recursively copies internal timestamp /
+  header-stamp buffers before discarding them. Public JSON, scores and retained
+  buffers are unchanged; large reports avoid this unnecessary allocation.
 - Sync score (`bagx eval`, all SLAM / Autoware / perception bags with two or more sensor
   streams): each pair walked whichever topic sorted first by name and took the nearest
   message on the other. For a dense/sparse pair such as 200 Hz IMU ↔ 10 Hz LiDAR this

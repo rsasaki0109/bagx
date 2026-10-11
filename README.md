@@ -130,6 +130,7 @@ pip install bagx[ros1]   # ROS1 .bag support (pure Python via rosbags)
 | `bagx mcp` | MCP server for agents (eval/topics/anomalies — no LLM key) |
 | `bagx benchmark suite.json` | Re-run a curated benchmark suite and fail CI on regressions |
 | `bagx eval bag.db3 --rules rules.json` | Apply custom topic/type/rate/latency rules for your stack |
+| `bagx eval bag.db3 --sync-pairing imu` | Compare the primary IMU with every eligible sensor, including secondary cameras and LiDARs |
 | `bagx eval bag.db3 --badge badge.json` | Emit a shields.io readiness badge you can show in a README |
 | `bagx eval bag.db3 --tune fast_lio` | Generate a FAST-LIO / KISS-ICP starting-point YAML from bag metrics |
 | `bagx eval bag.db3 --html report.html` | Write a self-contained visual HTML readiness report |

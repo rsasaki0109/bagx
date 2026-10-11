@@ -88,6 +88,20 @@ class TestEvalMulti:
 
 
 class TestEvalReport:
+    def test_serialization_does_not_copy_private_timestamp_buffers(self, multi_bag: Path):
+        class UncopyableTimestamp(int):
+            def __deepcopy__(self, memo):
+                raise AssertionError("private timestamps must not be copied for JSON")
+
+        report = evaluate_bag(str(multi_bag))
+        expected = report.to_dict()
+        report._topic_timestamps = {"/imu": [UncopyableTimestamp(123)]}
+        report._topic_stamps = {"/imu": [(UncopyableTimestamp(123), 456)]}
+        timestamps, stamps = report._topic_timestamps, report._topic_stamps
+        assert report.to_dict() == expected
+        assert report._topic_timestamps is timestamps
+        assert report._topic_stamps is stamps
+
     def test_to_dict_no_nan(self, gnss_bag: Path):
         report = evaluate_bag(str(gnss_bag))
         d = report.to_dict()

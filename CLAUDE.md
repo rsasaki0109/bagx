@@ -132,6 +132,7 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 
 ## header.stamp の sync 診断
 `eval_sync_stamps.py` は eval の既存 sync pair と `_topic_stamps` を使う追加診断（スコア・pair 選択は変更しない）。header 最近傍 mean/P95 に加え、共通記録区間で topic B と A の `median(stamp − record)` の差を出す。密な周期 IMU の最近傍だけでは見えない一定ずれを検出するが、通信・記録遅延も含むので物理的センサー遅延とは断定しない。
+- `eval --sync-pairing imu` / `EvalConfig(sync_pairing="imu")` は最良スコアの active IMU と全 eligible sensor を組む（IMU が無ければ全隣接 pair）。既定は従来の名前順5組。pair の変更は SLAM / Autoware / perception の sync / overall に影響するため、比較時の mode を固定する。batch / benchmark / scoreboard の既定スコアは変えない。
 - `sync.header_stamp.<topic_a_token>.<topic_b_token>.*`（category `sync_quality`）の findings と `Header sync:` レコメ。差20ms以上で warning、1s以上なら clock 不一致候補として header 最近傍は出さない。
 - 非ゼロ stamp が5件未満、coverage90%未満、stamp重複・逆行、共通区間不足は `unavailable`。missing を正常判定にしない。
 - `bagx sync` CLI の既存記録時刻指標は変更しない。詳細は `docs/guide/sync.md`。

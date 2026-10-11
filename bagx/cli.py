@@ -188,6 +188,10 @@ def eval(
     include_anomaly: bool = typer.Option(
         False, "--include-anomaly", help="Also run anomaly detection and merge its temporal findings (fix-lost segments, spike clusters, rate gaps) into the report"
     ),
+    sync_pairing: str = typer.Option(
+        "adjacent", "--sync-pairing",
+        help="Sensor sync pairs: adjacent (legacy first 5) or imu (primary IMU with every sensor)",
+    ),
     badge_output: Optional[str] = typer.Option(
         None, "--badge", help="Write a shields.io endpoint JSON badge of the readiness score to this file (reference via https://img.shields.io/endpoint?url=...)"
     ),
@@ -209,7 +213,7 @@ def eval(
     Analyzes GNSS fix rate/HDOP, IMU noise/bias, and inter-topic sync,
     producing a composite quality score.
     """
-    from bagx.eval import evaluate_bag, print_eval_report
+    from bagx.eval import EvalConfig, evaluate_bag, print_eval_report
     from bagx.findings import SEVERITY_ORDER, severity_at_least
 
     if severity_min is not None and severity_min not in SEVERITY_ORDER:
@@ -218,9 +222,14 @@ def eval(
         )
         raise typer.Exit(2)
 
+    if sync_pairing not in {"adjacent", "imu"}:
+        console.print("[red]Error: --sync-pairing must be adjacent or imu[/red]")
+        raise typer.Exit(2)
+
     try:
         report = evaluate_bag(
             bag,
+            config=EvalConfig(sync_pairing=sync_pairing),
             custom_rules_path=rules_path,
             include_anomaly=include_anomaly,
         )

@@ -40,6 +40,11 @@ publisher's acquisition timestamps have a constant offset.
 `bagx eval recording.db3` also examines `header.stamp` for the sensor pairs in
 its sync analysis. The normal output includes `Header sync:` lines. Use
 `--findings-only` or `--json eval.json` for the underlying measurements.
+By default these are the first five adjacent sensor pairs by name. To cover
+every eligible sensor against the best-scoring active IMU, use
+`bagx eval recording.db3 --sync-pairing imu`. Without an active IMU, that mode
+uses all adjacent sensor pairs. Both modes need at least five shared samples
+per stream in a pair.
 
 Two measurements are reported together:
 
@@ -85,7 +90,9 @@ Zero/nonpositive stamps are excluded; repeated or regressing stamps make that
 pair unavailable. Large clock differences and start/stop boundaries are not
 converted into purported acquisition delays.
 
-These checks add findings and recommendations only. Existing sync / overall
-scores, sensor-pair selection, the `bagx sync` command's recording-time metrics,
-report keys and version numbers are unchanged. New warning findings can affect
+Header-stamp checks add findings and recommendations only. Default sync / overall
+scores, default sensor-pair selection, the `bagx sync` command's recording-time metrics,
+report keys and version numbers are unchanged. Choosing `--sync-pairing imu`
+can change scores because it changes which recording-time pairs are evaluated.
+New warning findings can affect
 CI gates that use severity thresholds, even when score thresholds still pass.
