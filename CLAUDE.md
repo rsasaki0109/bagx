@@ -121,7 +121,9 @@ Header 先頭の型 (NavSatFix / Imu / PoseStamped / PointCloud2 / Header) は `
 - 出力トピックの各タイムスタンプに対し、`np.searchsorted` で直前の入力タイムスタンプを特定
 - 差分 = 処理遅延 (median, P95)
 - 閾値: <50ms ✔, 50-200ms ⚠ (may affect real-time), >200ms ❌ (too slow)
-- 注意: 入力と出力が同レートで固定オフセットの場合にのみ正確。異なるレートの場合は近似
+- **header stamp 照合**: 出力メッセージの header.stamp が入力の stamp と一致する（stamp 伝播）出力が50%以上あれば、記録時刻差でメッセージ単位の正確な遅延を出す（レコメに `(header-stamp matched)`）。eval の read パスで stamp を持つトピックの (記録時刻, stamp) を `report._topic_stamps` に保持
+- 照合できない場合は従来の近似: 入力と出力が同レートで固定オフセットの場合にのみ正確。異なるレートの場合は近似（例: 50Hz odom → 45ms 遅れの amcl_pose を 5ms と過小評価する）
+- SQLite フォールバックで stamp が取れるのは CDR パーサーのある型のみ（Autoware 独自型は ROS / mcap デコード時のみ）
 
 ## anomaly検出の注意点
 - **IMUトピックは専用検出器**でカバー。`rate_gap`からは除外（二重検出防止）

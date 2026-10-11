@@ -178,7 +178,7 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
             nav2_pipeline.append((odom_topics[0], amcl_topics[0], "odom → localization"))
         if scan_topics and cmd_vel_topics:
             nav2_pipeline.append((scan_topics[0], cmd_vel_topics[0], "scan → cmd_vel (full loop)"))
-        _add_pipeline_latency_recs(recs, ts, nav2_pipeline)
+        _add_pipeline_latency_recs(recs, ts, nav2_pipeline, stamps=report._topic_stamps)
         if plan_topics and cmd_vel_topics:
             _add_event_response_latency_recs(
                 recs,
@@ -305,7 +305,7 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
             aw_pipeline.append((planning[0], control[0], "planning → control"))
         if sensing_lidar and control:
             aw_pipeline.append((sensing_lidar[0], control[0], "end-to-end (sensing → control)"))
-        _add_pipeline_latency_recs(recs, ts, aw_pipeline)
+        _add_pipeline_latency_recs(recs, ts, aw_pipeline, stamps=report._topic_stamps)
 
     # --- MoveIt detection ---
     joint_state_topics = _select_topics(
@@ -419,7 +419,9 @@ def _detect_domain_recommendations(report: EvalReport) -> list[str]:
         moveit_pipeline = []
         if joint_state_topics and planned_path_topics:
             moveit_pipeline.append((joint_state_topics[0], planned_path_topics[0], "joint_states → planned_path"))
-        _add_pipeline_latency_recs(recs, ts, moveit_pipeline, min_output_samples=1)
+        _add_pipeline_latency_recs(
+            recs, ts, moveit_pipeline, min_output_samples=1, stamps=report._topic_stamps
+        )
         if planned_path_topics and controller_action_status_topics:
             _add_event_response_latency_recs(
                 recs,

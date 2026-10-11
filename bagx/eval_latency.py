@@ -1,8 +1,44 @@
-"""Approximate pipeline latency recommendations for bagx eval."""
+"""Pipeline latency recommendations for bagx eval.
+
+When the output of a stage carries the header stamp of the input it was
+computed from (stamp propagation), latency is measured exactly per message.
+Otherwise it is approximated from record times.
+"""
 
 from __future__ import annotations
 
 import numpy as np
+
+# Share of output messages whose stamp must match an input stamp before the
+# stamp-matched (exact) measurement replaces the record-time approximation.
+STAMP_MATCH_MIN_RATIO = 0.5
+
+
+def _stamp_matched_latencies(
+    input_stamps: list[tuple[int, int]] | None,
+    output_stamps: list[tuple[int, int]] | None,
+    min_samples: int,
+) -> list[float] | None:
+    """Per-message latency (ms) for outputs whose header stamp equals an input stamp.
+
+    Returns None unless enough outputs match for the pairing to be trusted.
+    """
+    if not input_stamps or not output_stamps:
+        return None
+    first_record_by_stamp: dict[int, int] = {}
+    for record_ns, stamp_ns in input_stamps:
+        first_record_by_stamp.setdefault(stamp_ns, record_ns)
+    latencies = [
+        (record_ns - first_record_by_stamp[stamp_ns]) / 1e6
+        for record_ns, stamp_ns in output_stamps
+        if stamp_ns in first_record_by_stamp and record_ns >= first_record_by_stamp[stamp_ns]
+    ]
+    if len(latencies) < max(min_samples, 1):
+        return None
+    if len(latencies) < STAMP_MATCH_MIN_RATIO * len(output_stamps):
+        return None
+    return latencies
+
 
 def _add_pipeline_latency_recs(
     recs: list[str],
@@ -10,13 +46,28 @@ def _add_pipeline_latency_recs(
     pipeline: list[tuple[str, str, str]],
     *,
     min_output_samples: int = 5,
+    stamps: dict[str, list[tuple[int, int]]] | None = None,
 ) -> None:
     """Measure and report pipeline latency between topic pairs.
 
-    For each (input_topic, output_topic, label), computes the median delay
-    from input to the next output message, which estimates processing latency.
+    For each (input_topic, output_topic, label): if output header stamps match
+    input stamps, report the exact per-message latency; otherwise compute the
+    median delay from input to the next output message, which estimates
+    processing latency.
     """
+    stamps = stamps or {}
     for input_topic, output_topic, label in pipeline:
+        exact = _stamp_matched_latencies(
+            stamps.get(input_topic), stamps.get(output_topic), min_output_samples
+        )
+        if exact is not None:
+            _append_latency_rec(
+                recs, label, exact, note=" (header-stamp matched)",
+                slow_suffix="may affect real-time performance",
+                too_slow_suffix="too slow for real-time",
+            )
+            continue
+
         ts_in = topic_timestamps.get(input_topic, [])
         ts_out = topic_timestamps.get(output_topic, [])
         if len(ts_in) < max(min_output_samples, 1) or len(ts_out) < min_output_samples:
@@ -58,25 +109,35 @@ def _add_pipeline_latency_recs(
                         if aligned_median > predecessor_median + max(input_period_ms * 0.25, 1.0):
                             latencies_ms = aligned.tolist()
 
-        median_lat = float(np.median(latencies_ms))
-        p95_lat = float(np.percentile(latencies_ms, 95))
-        sample_note = ""
-        if len(latencies_ms) < 5:
-            plural = "s" if len(latencies_ms) != 1 else ""
-            sample_note = f" ({len(latencies_ms)} sample{plural})"
+        _append_latency_rec(
+            recs, label, latencies_ms,
+            slow_suffix="may affect real-time performance",
+            too_slow_suffix="too slow for real-time",
+        )
 
-        if median_lat < 50:
-            recs.append(
-                f"  [green]:heavy_check_mark:[/green] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}"
-            )
-        elif median_lat < 200:
-            recs.append(
-                f"  [yellow]:warning:[/yellow] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — may affect real-time performance"
-            )
-        else:
-            recs.append(
-                f"  [red]:x:[/red] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — too slow for real-time"
-            )
+
+def _append_latency_rec(
+    recs: list[str],
+    label: str,
+    latencies_ms: list[float],
+    *,
+    slow_suffix: str,
+    too_slow_suffix: str,
+    note: str = "",
+) -> None:
+    median_lat = float(np.median(latencies_ms))
+    p95_lat = float(np.percentile(latencies_ms, 95))
+    sample_note = ""
+    if len(latencies_ms) < 5:
+        plural = "s" if len(latencies_ms) != 1 else ""
+        sample_note = f" ({len(latencies_ms)} sample{plural})"
+    summary = f"Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}{note}"
+    if median_lat < 50:
+        recs.append(f"  [green]:heavy_check_mark:[/green] {summary}")
+    elif median_lat < 200:
+        recs.append(f"  [yellow]:warning:[/yellow] {summary} — {slow_suffix}")
+    else:
+        recs.append(f"  [red]:x:[/red] {summary} — {too_slow_suffix}")
 
 
 def _add_event_response_latency_recs(
@@ -108,22 +169,8 @@ def _add_event_response_latency_recs(
         if len(latencies_ms) < min_input_samples:
             continue
 
-        median_lat = float(np.median(latencies_ms))
-        p95_lat = float(np.percentile(latencies_ms, 95))
-        sample_note = ""
-        if len(latencies_ms) < 5:
-            plural = "s" if len(latencies_ms) != 1 else ""
-            sample_note = f" ({len(latencies_ms)} sample{plural})"
-
-        if median_lat < 50:
-            recs.append(
-                f"  [green]:heavy_check_mark:[/green] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note}"
-            )
-        elif median_lat < 200:
-            recs.append(
-                f"  [yellow]:warning:[/yellow] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — may affect responsiveness"
-            )
-        else:
-            recs.append(
-                f"  [red]:x:[/red] Pipeline {label}: {median_lat:.0f}ms median, {p95_lat:.0f}ms P95{sample_note} — too slow for interactive use"
-            )
+        _append_latency_rec(
+            recs, label, latencies_ms,
+            slow_suffix="may affect responsiveness",
+            too_slow_suffix="too slow for interactive use",
+        )

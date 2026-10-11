@@ -80,6 +80,18 @@ Host the file somewhere reachable by URL and reference it from a README:
 - **Mean/max delay**: Nearest-neighbor timestamp matching between adjacent topic pairs
 - Evaluates the first 5 topic pairs by name order
 
+### Pipeline latency
+For stack pipelines (Nav2 scan → costmap, odom → localization; Autoware sensing →
+perception → planning → control; MoveIt joint_states → planned_path):
+
+- **Exact** when the output carries the header stamp of the input it was computed from
+  (stamp propagation): latency = output record time − record time of the input with the
+  same stamp. Used when ≥ 50% of outputs match; the recommendation ends with
+  `(header-stamp matched)`.
+- **Approximate** otherwise: delay from the latest input before each output, based on
+  record times. This is accurate only for same-rate stages with a fixed offset, and
+  under-reports when the latency exceeds the input period.
+
 ### Overall Score
 Weighted average of available component scores (GNSS, IMU, Sync).
 
