@@ -93,7 +93,11 @@ def _write_real_bag(path: Path) -> None:
         "/amcl_pose": "geometry_msgs/msg/PoseWithCovarianceStamped", "/tf": "tf2_msgs/msg/TFMessage",
     }
     for i, (name, msg_type) in enumerate(types.items()):
-        writer.create_topic(rosbag2_py.TopicMetadata(i, name, msg_type, "cdr"))
+        try:  # Jazzy and later take a leading topic id
+            metadata = rosbag2_py.TopicMetadata(i, name, msg_type, "cdr")
+        except TypeError:  # Humble: TopicMetadata(name, type, serialization_format)
+            metadata = rosbag2_py.TopicMetadata(name, msg_type, "cdr")
+        writer.create_topic(metadata)
 
     base = 1_700_000_000_000_000_000
     for i in range(200):
